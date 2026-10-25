@@ -33,6 +33,7 @@ Browser: Vite + TS ── Rust→WASM graph core (layout, paths, diff; 50k nodes
 | `deploy/` | Dockerfile (same image locally and on Cloud Run), `cloudrun-deploy.sh` |
 
 ## Run it locally (no cloud needed)
+One command: `scripts/demo.sh`. It starts Postgres, seeds the demo timeline, and runs the API + UI (:8787) and the local GitLab (:8929/view). Or step by step:
 ```
 pnpm install
 pnpm db:up                                   # Postgres 17 in Docker on :5433
