@@ -1,0 +1,78 @@
+import { dm, expect, live, mapUrl, ready, REPO, shot, SNAP, test, url } from "./env";
+
+test("the connect page renders and validates the form", async ({ page }) => {
+  await page.goto(url("/connect"));
+  const form = page.locator(".connect-form");
+  await expect(form).toBeVisible();
+  await expect(page.getByText("never kept in this browser")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Continue with GitLab" })).toBeVisible();
+  await page.getByLabel("GitLab URL").fill("gitlab dot com");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(form.locator(".err").first()).toContainText("http://");
+  await expect(form.locator(".err").nth(1)).toContainText("personal access token");
+  await shot(page, "connect-errors");
+  if (live) return;
+  await page.getByLabel("GitLab URL").fill("http://localhost:8929");
+  await page.getByLabel("Personal access token").fill("glpat-demo-token-1234567890");
+  await page.getByRole("button", { name: "Connect" }).click();
+  await expect(page.getByRole("heading", { name: "Pick a project" })).toBeVisible();
+  await page.getByPlaceholder("Filter projects").fill("shop");
+  await expect(page.locator(".project-list li")).toHaveCount(1);
+  await shot(page, "connect-projects");
+  await page.getByRole("button", { name: "Import" }).click();
+  await expect(page.locator(".dig")).toBeVisible();
+  await page.waitForTimeout(1200);
+  await shot(page, "dig");
+  await ready(page);
+  await expect(page.locator(".dig")).toBeHidden();
+});
+
+test("render mode sets ready", async ({ page }) => {
+  await page.goto(url(`/render?repo=${encodeURIComponent(REPO)}&snapshot=${SNAP.upgrade}&delta=1`));
+  await ready(page);
+  await expect(page.locator(".render-card")).toContainText(REPO);
+  const box = await page.locator(".render-screen").boundingBox();
+  expect(box).toMatchObject({ width: 1200, height: 700 });
+  await shot(page, "render");
+});
+
+test("the 50k-node mock loads and logs layoutMs", async ({ page }) => {
+  test.skip(live, "synthetic graph is mock-only");
+  const logs: string[] = [];
+  page.on("console", (m) => m.text().includes("[depmap]") && logs.push(m.text()));
+  await page.goto(url("/repo/synthetic%2Fmonorepo-50k", "big=1"));
+  await ready(page, 60_000);
+  const r = await dm<{ nodeCount: number; layoutMs: number; cacheHit: boolean }>(page, "({ nodeCount: dm.nodeCount, layoutMs: dm.layoutMs, cacheHit: dm.cacheHit })");
+  expect(r.nodeCount).toBe(50_000);
+  expect(r.cacheHit).toBe(false);
+  console.log(`50k-node layoutMs: ${r.layoutMs}`);
+  test.info().annotations.push({ type: "layoutMs", description: String(r.layoutMs) });
+  expect(logs.some((l) => l.includes("50000 nodes"))).toBe(true);
+  const t = await dm<number>(page, "(() => { const t = performance.now(); dm.map.setHover(4321, 10, 10); dm.map.setHover(-1, 0, 0); return performance.now() - t; })()");
+  console.log(`50k-node hover in/out: ${t.toFixed(1)} ms`);
+  await shot(page, "map-50k");
+});
+
+test("the watchers page lists sources and links matches to the map", async ({ page }) => {
+  await page.goto(url(`/watchers?repo=${encodeURIComponent(REPO)}`));
+  await expect(page.locator(".sources li").first()).toBeVisible();
+  await expect(page.locator(".items li").first()).toBeVisible();
+  await shot(page, "watchers");
+  const match = page.locator(".pkg.on").first();
+  test.skip(!(await match.count()), "no post names a package in this repo");
+  const name = await match.textContent();
+  await match.click();
+  await ready(page);
+  await expect(page.locator(".drawer .pv-name")).toHaveText(name!);
+  await shot(page, "watchers-focus");
+});
+
+test("search finds a package and opens it", async ({ page }) => {
+  await page.goto(mapUrl());
+  await ready(page);
+  await page.keyboard.press("/");
+  await page.keyboard.type("chalk");
+  await expect(page.locator(".results li").first()).toContainText("chalk");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".drawer .pv-name")).toHaveText("chalk");
+});

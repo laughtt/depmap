@@ -1,0 +1,38 @@
+import { api, type Snapshot } from "./api";
+import { RISK, ago, esc, glyph, num, shortSha } from "./ui";
+import { brand, nav, stateMsg, themeButton } from "./view";
+
+function spark(snaps: Snapshot[]) {
+  const v = snaps.map((s) => s.counts.red), max = Math.max(1, ...v), w = 120, h = 28;
+  const pts = v.map((y, k) => [v.length < 2 ? w : (k * w) / (v.length - 1), h - 3 - (y / max) * (h - 8)]);
+  const last = pts[pts.length - 1];
+  return `<svg class="spark ${v[v.length - 1] ? "hot" : ""}" viewBox="-3 0 ${w + 6} ${h}" width="${w + 6}" height="${h}" role="img" aria-label="Red packages per snapshot: ${v.join(", ")}">
+    <path d="M${pts.map((p) => p.join(",")).join("L")}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="currentColor"/></svg>`;
+}
+
+export async function homeScreen(root: HTMLElement) {
+  root.innerHTML = `<div class="screen plain-screen">
+    <header class="topbar">${brand}${nav("repos")}<div class="spacer"></div><a class="btn primary" href="#/connect">Connect a repository</a>${themeButton()}</header>
+    <main class="home"><h1>Repositories</h1><div class="repo-grid"><div class="repo-card skeleton-card"></div><div class="repo-card skeleton-card"></div></div></main></div>`;
+  const grid = root.querySelector<HTMLElement>(".repo-grid")!;
+  try {
+    const repos = await api.repos();
+    if (!repos.length) {
+      grid.outerHTML = stateMsg("No repositories yet.", "Connect GitLab and import a project to see its dependency map.", `<a class="btn primary" href="#/connect">Connect a repository</a>`);
+      return;
+    }
+    const all = await Promise.all(repos.map((r) => api.snapshots(r.repo).catch(() => [] as Snapshot[])));
+    grid.innerHTML = repos.map((r, k) => {
+      const c = r.latest.counts;
+      return `<a class="repo-card" href="#/repo/${encodeURIComponent(r.repo)}/${r.latest.id}">
+        <div class="rc-top"><b>${esc(r.repo)}</b><span class="faint">${esc(r.latest.ref)} <code>${shortSha(r.latest.commitSha)}</code></span></div>
+        <div class="rc-mid">${all[k].length ? spark(all[k]) : ""}<div class="rc-reds">${glyph(2)}<b>${num(c.red)}</b><span>red now</span></div></div>
+        <div class="bar" aria-hidden="true">${[2, 1, 3, 0].map((x) => `<i class="risk-${RISK[x]}" style="flex:${c[RISK[x]]}"></i>`).join("")}</div>
+        <div class="rc-foot"><span>${num(c.total)} packages</span><span>${glyph(1)}${num(c.amber)}</span><span>${glyph(3)}${num(c.grey)}</span><span class="faint">${r.snapshots} snapshots · scanned ${ago(r.latest.createdAt)}</span></div>
+      </a>`;
+    }).join("") + `<a class="repo-card add" href="#/connect"><span class="plus" aria-hidden="true">+</span><b>Connect a repository</b><span class="faint">Import any GitLab project with an npm or pnpm lockfile</span></a>`;
+  } catch (e) {
+    grid.outerHTML = stateMsg("Repositories didn't load.", esc((e as Error).message), `<button class="btn" onclick="location.reload()">Try again</button>`);
+  }
+}

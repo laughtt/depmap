@@ -1,0 +1,128 @@
+# depmap's own pipeline. Runs locally with gitlab-ci-local; on gitlab.com it is the same file.
+#
+# GitLab DevSecOps stages → jobs
+#   1 Plan       depmap:refresh opens security::watch issues; the Duo flow posts investigations on MRs
+#   2 Create     build:wasm (Rust → WebAssembly graph core), build:web
+#   3 Verify     test:rust, test:server
+#   4 Package    package:image (docker build, manual)
+#   5 Secure     depmap:scan + depmap:gate on our own lockfile, CycloneDX SBOM report
+#   6 Release    pages (the public security page plus the static app)
+#   7 Configure  .gitlab/duo/agent-config.yml, flows/depmap.flow.yml, CI/CD variables
+#   8 Monitor    depmap:refresh (scheduled pipeline: advisories re-colour every repo)
+#   9 Govern     /depmap accept|pin decisions with expiry (audit trail in the events feed), depmap::* MR labels
+# deploy:cloudrun is the Release → Deploy step and stays manual.
+
+include:
+  - local: ci/templates/depmap.gitlab-ci.yml
+
+stages: [build, test, depmap, package, pages, deploy]
+
+variables:
+  DEPMAP_CI_DIR: ci
+  DEPMAP_LOCKFILE: pnpm-lock.yaml
+
+.node:
+  image: node:24
+  before_script:
+    - corepack enable
+    - pnpm install --frozen-lockfile
+  cache:
+    key: { files: [pnpm-lock.yaml] }
+    paths: [.pnpm-store]
+
+build:wasm:
+  stage: build
+  image: rust:1.91
+  script:
+    - rustup target add wasm32-unknown-unknown
+    - curl -fsSL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+    - cd crates/graph-core
+    - wasm-pack build --release --target web --out-dir ../../web/src/wasm --out-name graph_core
+    - wasm-pack build --release --target nodejs --out-dir ../../server/wasm --out-name graph_core
+  artifacts:
+    paths: [web/src/wasm, server/wasm]
+
+build:web:
+  extends: .node
+  stage: build
+  needs: [build:wasm]
+  script:
+    - pnpm --filter web build
+  artifacts:
+    paths: [web/dist]
+
+test:rust:
+  stage: test
+  image: rust:1.91
+  needs: []
+  script:
+    - cd crates/graph-core && cargo test --quiet
+
+test:server:
+  extends: .node
+  stage: test
+  needs: [build:wasm]
+  services:
+    - name: postgres:17
+      alias: db
+  variables:
+    POSTGRES_USER: depmap
+    POSTGRES_PASSWORD: depmap
+    POSTGRES_DB: depmap
+    DATABASE_URL: postgres://depmap:depmap@db:5432/depmap
+    DATA_MODE: replay
+  script:
+    - pnpm --filter server test
+
+depmap:refresh:
+  extends: .depmap
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $DEPMAP_API_URL
+  script:
+    - node ci/depmap-refresh.mjs
+
+package:image:
+  stage: package
+  image: docker:27
+  services: [docker:27-dind]
+  needs: [build:web]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  script:
+    - docker build -f deploy/Dockerfile -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+
+pages:
+  extends: .node
+  stage: pages
+  needs: [build:wasm, build:web]
+  services:
+    - name: postgres:17
+      alias: db
+  variables:
+    POSTGRES_USER: depmap
+    POSTGRES_PASSWORD: depmap
+    POSTGRES_DB: depmap
+    DATABASE_URL: postgres://depmap:depmap@db:5432/depmap
+    DATA_MODE: replay
+    ADVISORY_FEED: fixtures/feed/simulated-advisory.json
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - node scripts/seed-demo.ts
+    - node scripts/export-pages.ts public --app-url "${DEPMAP_APP_URL:-$CI_PAGES_URL/app}"
+    - cp -r web/dist public/app
+  artifacts:
+    paths: [public]
+
+deploy:cloudrun:
+  stage: deploy
+  image: google/cloud-sdk:slim
+  needs: [package:image]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  script:
+    - bash deploy/cloudrun-deploy.sh

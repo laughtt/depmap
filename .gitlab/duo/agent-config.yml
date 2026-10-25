@@ -1,0 +1,6 @@
+# Runtime for Duo flows in this project (read from the default branch).
+# The depmap flow reads only through GitLab tools (get_job_logs, get_merge_request, gitlab_api_get) and writes
+# one MR note, so it needs no network beyond the GitLab instance and no setup script.
+image: node:22
+network_policy:
+  allowed_domains: []

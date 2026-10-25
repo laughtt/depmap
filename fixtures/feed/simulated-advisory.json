@@ -1,0 +1,15 @@
+[
+  {
+    "id": "SIMULATED-2026-0001",
+    "summary": "Simulated advisory from the local demo feed (not a real vulnerability): stands in for a newly published advisory on ms 2.1.2",
+    "published": "2026-10-25T00:00:00Z",
+    "database_specific": { "severity": "HIGH", "url": "docs/simulated-advisory.md" },
+    "affected": [
+      {
+        "package": { "name": "ms", "ecosystem": "npm" },
+        "versions": ["2.1.2"],
+        "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "2.1.3" }] }]
+      }
+    ]
+  }
+]

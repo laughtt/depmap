@@ -1,0 +1,13 @@
+{
+  "name": "shop",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "main": "src/server.js",
+  "dependencies": {
+    "chalk": "4.1.2",
+    "debug": "4.3.4",
+    "express": "4.21.2"
+  }
+}

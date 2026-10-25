@@ -1,0 +1,100 @@
+# depmap investigation flow (GitLab Duo Agent Platform, flow registry v1).
+# Triggers: Mention (@depmap in an MR comment), Pipeline events (Failed), or the REST fallback
+# POST /api/v4/ai/duo_workflows/workflows started by the depmap:report CI job.
+# The flow never crawls anything: CI already did, and printed a receipt at the end of the job log.
+version: "v1"
+environment: ambient
+
+components:
+  - name: "reader"
+    type: AgentComponent
+    prompt_id: "depmap_reader"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+    toolset:
+      - "get_merge_request"
+      - "gitlab_api_get"
+      - "get_job_logs"
+    ui_log_events:
+      - on_agent_final_answer
+      - on_tool_execution_success
+      - on_tool_execution_failed
+
+  - name: "investigator"
+    type: AgentComponent
+    prompt_id: "depmap_investigator"
+    inputs:
+      - from: "context:reader.final_answer"
+        as: "receipt"
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+    toolset:
+      - "create_merge_request_note"
+    ui_log_events:
+      - on_agent_final_answer
+      - on_tool_execution_success
+      - on_tool_execution_failed
+
+prompts:
+  - prompt_id: "depmap_reader"
+    name: "depmap receipt reader"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You find the depmap receipt for one merge request. You never guess.
+        1. Find the merge request IID in the goal: "MergeRequest IID: N", "merge request !N", or a pipeline
+           event payload with merge_request.iid. If there is none (for example a branch pipeline), answer exactly SKIP.
+        2. Find the job: if the goal names a job id, use it. Otherwise call gitlab_api_get on
+           /projects/{project_id}/merge_requests/{iid}/pipelines, take the newest pipeline, list its jobs with
+           /projects/{project_id}/pipelines/{pipeline_id}/jobs and pick the job named "depmap:scan".
+        3. Call get_job_logs for that job. The receipt is the JSON between the last BEGIN_DEPMAP_JSON and END_DEPMAP_JSON lines.
+        Answer with that JSON only, unchanged. If any step finds nothing, answer exactly SKIP.
+      user: |
+        Project id: {{project_id}}
+        Goal:
+        {{goal}}
+      placeholder: history
+    params:
+      timeout: 180
+
+  - prompt_id: "depmap_investigator"
+    name: "depmap investigator"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You explain dependency risk to the developers of a merge request, in plain language, in ONE note
+        posted with create_merge_request_note on the receipt's projectId and mrIid. Use only facts from the receipt.
+        If the goal starts with "Input:", a human wrote that comment: explain the effect of the /depmap decision
+        they typed (what the gate will do, for how long, and what risk remains). Do not repeat the CI report.
+        Otherwise, for each red package with "undecided": true:
+        - What happened: the reasons, each with its link.
+        - What the fingerprint means: name the past attack it resembles and how many signals match.
+        - The safest action: pin the version the MR replaces (from "changed"), or wait out the cooldown before upgrading.
+          Give the exact /depmap pin or /depmap accept command.
+        Keep it under 250 words. Never tell anyone to install or run the flagged version.
+      user: |
+        Goal:
+        {{goal}}
+        Receipt:
+        {{receipt}}
+      placeholder: history
+    params:
+      timeout: 180
+
+routers:
+  - from: "reader"
+    condition:
+      input: "context:reader.final_answer"
+      routes:
+        "SKIP": "end"
+        "default_route": "investigator"
+  - from: "investigator"
+    to: "end"
+
+flow:
+  entry_point: "reader"

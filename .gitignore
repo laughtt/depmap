@@ -1,0 +1,11 @@
+node_modules
+dist
+target
+.env.local
+test-results
+playwright-report
+web/src/wasm
+server/wasm
+.gitlab-ci-local
+*.log
+fixtures/local

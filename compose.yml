@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: depmap
+      POSTGRES_PASSWORD: depmap
+      POSTGRES_DB: depmap
+    ports: ["5433:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U depmap"]
+      interval: 2s
+      retries: 20
+  mock-gitlab:
+    build: { context: ., dockerfile: deploy/Dockerfile }
+    command: ["node", "server/src/gitlab/mock.ts"]
+    environment: { MOCK_GITLAB_PORT: "8929" }
+    ports: ["8929:8929"]
+    profiles: [full]
+  api:
+    build: { context: ., dockerfile: deploy/Dockerfile }
+    environment:
+      DATABASE_URL: postgres://depmap:depmap@db:5432/depmap
+      PORT: "8080"
+      DATA_MODE: replay
+      APP_SECRET: local-dev-secret-change-me
+    ports: ["8080:8080"]
+    depends_on: { db: { condition: service_healthy } }
+    profiles: [full]

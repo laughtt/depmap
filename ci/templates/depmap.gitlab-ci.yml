@@ -1,0 +1,68 @@
+# depmap: dependency supply-chain map and gate for any npm project.
+#
+#   include:
+#     - remote: https://<depmap host>/ci/templates/depmap.gitlab-ci.yml
+#   stages: [..., depmap]          # add the stage if you define your own list
+#
+# CI/CD variables (Settings > CI/CD > Variables):
+#   DEPMAP_API_URL      the depmap server (required)
+#   DEPMAP_APP_URL      UI origin for the map image and links (default: DEPMAP_API_URL)
+#   GITLAB_TOKEN        masked; api scope, used to post the MR note, label and upload (default: CI_JOB_TOKEN)
+#   DEPMAP_START_FLOW   "1" to start the Duo investigation flow over REST when the gate fails
+#   DEPMAP_FLOW_CONSUMER_ID   the flow's AI catalog consumer id (for the REST start)
+#   DEPMAP_AS_OF        optional ISO time, replays risk as it was at that moment
+#   DEPMAP_LOCKFILE     default package-lock.json, then pnpm-lock.yaml
+# CI does all the crawling and spends 0 GitLab credits; the flow only reads the receipt at the end of the scan log.
+
+stages: [depmap]
+
+.depmap:
+  stage: depmap
+  image: node:22
+  before_script:
+    - DEPMAP_CI_DIR="${DEPMAP_CI_DIR:-.depmap}"
+    - |
+      if [ ! -f "$DEPMAP_CI_DIR/depmap-scan.mjs" ]; then
+        mkdir -p "$DEPMAP_CI_DIR"
+        for f in lib scan gate render post sbom; do
+          curl -fsSL "${DEPMAP_SCRIPTS_URL:-$DEPMAP_API_URL/ci}/depmap-$f.mjs" -o "$DEPMAP_CI_DIR/depmap-$f.mjs"
+        done
+        if [ "$CI_JOB_NAME" = "depmap:report" ]; then npm install --no-save --prefix "$DEPMAP_CI_DIR" playwright-core@1.64.1 >/dev/null 2>&1 || true; fi
+      fi
+
+depmap:scan:
+  extends: .depmap
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - node "$DEPMAP_CI_DIR/depmap-scan.mjs"
+    - node "$DEPMAP_CI_DIR/depmap-sbom.mjs"
+  artifacts:
+    when: always
+    paths: [depmap.json]
+    reports:
+      cyclonedx: gl-sbom-npm-depmap.cdx.json
+
+depmap:gate:
+  extends: .depmap
+  needs: [depmap:scan]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - node "$DEPMAP_CI_DIR/depmap-gate.mjs"
+
+depmap:report:
+  extends: .depmap
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  needs:
+    - depmap:scan
+    - job: depmap:gate
+      artifacts: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+  script:
+    - node "$DEPMAP_CI_DIR/depmap-render.mjs" || true
+    - node "$DEPMAP_CI_DIR/depmap-post.mjs"

@@ -1,0 +1,8 @@
+# Changes to what counts as risky, or to what the agents may do, need a security owner's approval.
+[Security policy]
+/server/src/scanner/rules.ts @acme/security
+/server/src/scanner/fingerprints.ts @acme/security
+/server/src/watchers/ @acme/security
+/flows/ @acme/security
+/.gitlab/duo/ @acme/security
+/ci/ @acme/security

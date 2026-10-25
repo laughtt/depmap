@@ -1,0 +1,24 @@
+{
+  "name": "depmap",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "build:wasm": "cd crates/graph-core && wasm-pack build --release --target web --out-dir ../../web/src/wasm --out-name graph_core && wasm-pack build --release --target nodejs --out-dir ../../server/wasm --out-name graph_core",
+    "build:web": "pnpm --filter web build",
+    "dev:api": "node --env-file-if-exists=.env.local server/src/api/main.ts",
+    "dev:mock": "node server/src/gitlab/mock.ts",
+    "dev:web": "pnpm --filter web dev",
+    "test:rust": "cd crates/graph-core && cargo test --quiet",
+    "test:server": "pnpm --filter server test",
+    "test:web": "pnpm --filter web test:e2e",
+    "test:all": "node scripts/test-all.mjs"
+  },
+  "devDependencies": {
+    "gitlab-ci-local": "^4.76.1"
+  }
+}
