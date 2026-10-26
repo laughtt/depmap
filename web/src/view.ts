@@ -19,7 +19,7 @@ export function themeButton() {
   return `<button class="icon-btn theme" aria-label="Switch colour theme"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg></button>`;
 }
 
-export const brand = `<a class="brand" href="/" aria-label="Depmap home"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="1.7" fill="currentColor"/><circle cx="15.2" cy="6.4" r="1.3" fill="var(--red)"/></svg><span>depmap</span></a>`;
+export const brand = `<a class="brand" href="/" aria-label="DepthMap home"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="1.7" fill="currentColor"/><circle cx="15.2" cy="6.4" r="1.3" fill="var(--red)"/></svg><span>DepthMap</span></a>`;
 
 // filled from /api/me before the first route
 export const session = { loginRequired: false, gitlabUrl: "http://localhost:8929", user: null as null | { username: string; name: string; avatarUrl: string | null } };

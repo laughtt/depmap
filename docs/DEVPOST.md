@@ -11,12 +11,12 @@ On **September 8, 2025** a phished maintainer republished **18 npm packages with
 
 Weeks later the Shai-Hulud worm did it again. Scanners that only read advisory databases are blind in those first hours, because no advisory exists yet. They also stop at "this is vulnerable" and leave the hard part to developers: where is it used in my code, what do I change, and will the upgrade break me?
 
-## What depmap does
-depmap runs inside GitLab and makes every npm dependency of a project visible, colours each one by risk, blocks risky ones in merge requests, and gets them fixed. A human approves the fix.
+## What DepthMap does
+DepthMap runs inside GitLab and makes every npm dependency of a project visible, colours each one by risk, blocks risky ones in merge requests, and gets them fixed. A human approves the fix.
 
 1. **Scan on every push and merge request.**
    - A two-line CI include (`depmap:scan`) sends the lockfile and the JS/TS sources.
-   - depmap resolves the full tree and colours each `package@version`:
+   - DepthMap resolves the full tree and colours each `package@version`:
      - **red:** a malicious-package record, a critical advisory, a version that is too fresh during a cooldown, a typosquat, an install script that appeared out of nowhere;
      - **amber** or **green** otherwise.
    - It also matches **fingerprints of past attacks** (event-stream, ua-parser-js, colors and faker, chalk and debug 2025, Shai-Hulud). For example: "looks like the chalk/debug takeover: 4 of 4 signals".
@@ -47,7 +47,7 @@ depmap runs inside GitLab and makes every npm dependency of a project visible, c
 The web app (live map, per-push page, fix cards with links to the exact file and line on GitLab) is where people explore. GitLab is where the work happens.
 
 ## How GitLab automates the post-code lifecycle (all 9 stages)
-| Stage | In depmap |
+| Stage | In DepthMap |
 |---|---|
 | plan | `security::watch` issues opened by the scheduled refresh when a new advisory hits a repo |
 | create | fix merge requests opened by the Duo fixer agent, or from the Decision tab |

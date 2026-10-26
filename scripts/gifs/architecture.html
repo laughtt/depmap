@@ -1,0 +1,71 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DepthMap architecture</title>
+<style>
+  body { margin: 0; background: #06080d; font: 13px/1.3 Inter, "Instrument Sans", system-ui, sans-serif; }
+  svg { display: block; }
+  .col { fill: #0a0e15; stroke: #19202b; }
+  .col-t { fill: #8d97a8; font-size: 11px; font-weight: 600; letter-spacing: .08em; }
+  .n rect { fill: #0f141d; stroke: #273042; rx: 7; transition: none; }
+  .n text { fill: #8d97a8; font-size: 12.5px; }
+  .n.on rect { stroke: #9db4ff; fill: #121a2b; }
+  .n.on text { fill: #e4e9f1; }
+  .n.red rect { stroke: #ff6b6b; fill: #2a1418; } .n.red text { fill: #ffd7d7; }
+  .n.ok rect { stroke: #43d29b; fill: #10261e; } .n.ok text { fill: #d2f7e7; }
+  .a { fill: none; stroke: #19202b; stroke-width: 1.5; }
+  .a.on { stroke: #9db4ff; }
+  .dot { fill: #9db4ff; filter: drop-shadow(0 0 6px #9db4ff); }
+  .cap { fill: #e4e9f1; font-size: 16px; font-weight: 600; }
+  .num { fill: #9db4ff; font-size: 13px; font-weight: 700; }
+  .brand { fill: #e4e9f1; font-size: 18px; font-weight: 700; }
+</style></head>
+<body><svg id="s" width="960" height="560" viewBox="0 0 960 560"></svg>
+<script>
+const S = document.getElementById("s"), NS = "http://www.w3.org/2000/svg";
+const el = (t, a, p = S) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e; };
+const W = 260, H = 36;
+const cols = [["GITLAB", 20], ["DEPTHMAP SERVER", 335], ["PEOPLE", 650]];
+const nodes = {
+  push: [0, 0, "Push / merge request"], scan: [0, 1, "depmap:scan (CI job)"], gate: [0, 2, "depmap:gate"], note: [0, 3, "MR comment: verdict + fix list"],
+  fixall: [0, 4, "Comment: @DepthMap fix all"], duo: [0, 5, "GitLab Duo flow: triage → fixer"], fixmr: [0, 6, "Fix merge request"], relock: [0, 7, "depmap:relock → rescan"],
+  scanner: [1, 0, "Scanner: npm · deps.dev · OSV"], risk: [1, 1, "Risk rules + attack fingerprints"], remedy: [1, 2, "Where it's used + the fix"],
+  ai: [1, 3, "AI code change (Claude Haiku)"], slim: [1, 4, "Fewer dependencies"], db: [1, 5, "Postgres: snapshots · decisions"], refresh: [1, 7, "Hourly refresh: new advisories"],
+  web: [2, 0, "Fix list · map · blast radius"], decide: [2, 2, "Decide: fix · accept · pin"], issues: [2, 7, "Issue opened in every repo hit"], review: [2, 6, "Review and merge"],
+};
+const pos = (k) => { const [c, r] = nodes[k]; return { x: cols[c][1] + 15, y: 92 + r * 52 }; };
+const arrows = [["push","scan"],["scan","scanner"],["scanner","risk"],["risk","remedy"],["remedy","ai"],["ai","gate"],["gate","note"],["note","web"],["fixall","duo"],["duo","fixmr"],["fixmr","relock"],["relock","review"],["refresh","issues"],["remedy","slim"]];
+const steps = [
+  { on: ["push", "scan"], arrow: ["push","scan"], cap: "A push or merge request runs the depmap:scan job" },
+  { on: ["scan", "scanner"], arrow: ["scan","scanner"], cap: "The lockfile and sources go to DepthMap" },
+  { on: ["scanner", "risk"], arrow: ["scanner","risk"], cap: "Every package is checked: advisories, malware, attack fingerprints" },
+  { on: ["risk", "remedy", "slim"], arrow: ["risk","remedy"], cap: "Each risky package gets the line that uses it and the fix" },
+  { on: ["remedy", "ai"], arrow: ["remedy","ai"], cap: "Breaking upgrades get the exact code change, read from the migration guide" },
+  { on: ["ai", "gate"], red: ["gate"], arrow: ["ai","gate"], cap: "The gate blocks the merge while a red package is undecided" },
+  { on: ["note", "web"], red: ["gate"], arrow: ["note","web"], cap: "One short MR comment links to the fix list" },
+  { on: ["fixall", "duo"], red: ["gate"], arrow: ["fixall","duo"], cap: "A developer comments “fix all”: the GitLab Duo flow takes over" },
+  { on: ["duo", "fixmr"], arrow: ["duo","fixmr"], cap: "The fixer agent commits new versions and opens one merge request" },
+  { on: ["relock", "review"], ok: ["relock", "fixmr"], arrow: ["relock","review"], cap: "CI regenerates the lockfile and rescans: 0 red. A human merges." },
+  { on: ["refresh", "issues", "db"], arrow: ["refresh","issues"], cap: "Every hour, new advisories re-check every repo and open issues" },
+];
+el("text", { x: 20, y: 34, class: "brand" }).textContent = "DepthMap";
+el("text", { x: 118, y: 34, class: "col-t" }).textContent = "how a risky npm dependency gets caught and fixed";
+for (const [t, x] of cols) { el("rect", { x, y: 52, width: 290, height: 432, rx: 10, class: "col" }); el("text", { x: x + 15, y: 74, class: "col-t" }).textContent = t; }
+const path = (a, b) => { const p = pos(a), q = pos(b); const [ax, ay, bx, by] = nodes[a][0] === nodes[b][0]
+  ? [p.x + 30, p.y + H, q.x + 30, q.y] : nodes[a][0] < nodes[b][0] ? [p.x + W, p.y + H / 2, q.x, q.y + H / 2] : [p.x, p.y + H / 2, q.x + W, q.y + H / 2];
+  const mx = (ax + bx) / 2; return nodes[a][0] === nodes[b][0] ? `M${ax},${ay} L${bx},${by}` : `M${ax},${ay} C${mx},${ay} ${mx},${by} ${bx},${by}`; };
+const A = {}; for (const [a, b] of arrows) A[a + b] = el("path", { d: path(a, b), class: "a" });
+const N = {}; for (const k in nodes) { const p = pos(k), g = el("g", { class: "n" }); el("rect", { x: p.x, y: p.y, width: W, height: H }, g); el("text", { x: p.x + 12, y: p.y + 23 }, g).textContent = nodes[k][2]; N[k] = g; }
+const dot = el("circle", { r: 5, class: "dot" });
+el("rect", { x: 20, y: 500, width: 920, height: 44, rx: 8, fill: "#0a0e15", stroke: "#19202b" });
+const num = el("text", { x: 36, y: 528, class: "num" }), cap = el("text", { x: 72, y: 528, class: "cap" });
+const STEP = 1.8;
+window.duration = steps.length * STEP;
+window.show = (t) => {
+  const i = Math.min(steps.length - 1, Math.floor(t / STEP)), s = steps[i], p = Math.min(1, (t - i * STEP) / (STEP * 0.6));
+  for (const k in N) N[k].setAttribute("class", "n" + ((s.red ?? []).includes(k) ? " red" : (s.ok ?? []).includes(k) ? " ok" : s.on.includes(k) ? " on" : ""));
+  for (const k in A) A[k].setAttribute("class", "a" + (k === s.arrow.join("") ? " on" : ""));
+  const a = A[s.arrow.join("")], pt = a.getPointAtLength(a.getTotalLength() * (1 - Math.pow(1 - p, 3)));
+  dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
+  num.textContent = String(i + 1).padStart(2, "0"); cap.textContent = s.cap;
+};
+show(0);
+</script></body></html>

@@ -12,7 +12,7 @@ export async function watchersScreen(root: HTMLElement, params: URLSearchParams)
     <main class="watch">
       <div class="watch-head page-head">
         <div><h1>Security watchers</h1>
-          <p>Attacks on npm packages are usually written up by researchers, or listed as malware advisories, hours before any CVE exists. Depmap polls these sources and checks every package they name against your repositories.</p></div>
+          <p>Attacks on npm packages are usually written up by researchers, or listed as malware advisories, hours before any CVE exists. DepthMap polls these sources and checks every package they name against your repositories.</p></div>
         <div class="watch-actions"><label class="field inline"><span>Match against</span><select class="repo-pick"></select></label><button class="btn poll">${reasonIcon("security-post").svg.replace('class="ricon"', 'class="glyph"')}<span>Poll now</span></button></div>
       </div>
       <div class="watch-status" aria-live="polite"></div>

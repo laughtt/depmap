@@ -80,7 +80,7 @@ export async function openFixMr(snapshotId: number, pvs: string[], conn: { url: 
   const changes = `Changes: \`package.json\`${required.length ? `, ${required.length} code change${required.length > 1 ? 's' : ''} written by the AI` : ''}${lock ? `, \`${lockName}\` regenerated` : ''}.`;
   const description = [
     ...(one ? [`**${one.action!.text}**`, '', ...one.why.map((w) => `- ${w}`)]
-      : [`**Fixes ${chosen.length} risky packages found by depmap scan #${snapshotId}.**`, '', '| Package | Change | Why |', '|---|---|---|',
+      : [`**Fixes ${chosen.length} risky packages found by DepthMap scan #${snapshotId}.**`, '', '| Package | Change | Why |', '|---|---|---|',
         ...chosen.map((r) => `| \`${r.name}\` | ${r.version} → ${r.action!.version}${r.direct ? '' : ' (override)'} | ${r.why[0]?.split(/\.\s/)[0].replace(/\|/g, '\\|') ?? ''} |`)]),
     '', changes,
     ...(lock ? [] : ['', `The lockfile could not be regenerated here; run \`${pnpm ? 'pnpm install' : 'npm install'}\` on this branch.`]),
@@ -88,7 +88,7 @@ export async function openFixMr(snapshotId: number, pvs: string[], conn: { url: 
     ...(optional.length ? ['', `<details><summary>${optional.length} optional code change${optional.length > 1 ? 's' : ''}, not applied</summary>`,
       ...optional.flatMap((e: any) => ['', `\`${e.file}:${e.startLine}\`: ${e.why}`, '```diff', ...e.before.split('\n').map((l: string) => `-${l}`), ...e.after.split('\n').map((l: string) => `+${l}`), '```']), '</details>'] : []),
     '', `Sources: ${chosen.flatMap((r) => r.sources.slice(0, one ? 8 : 1)).map((x) => `[${x.label}](${x.url})`).join(' · ')}`,
-    '', `_Opened by depmap for ${by}._`,
+    '', `_Opened by DepthMap for ${by}._`,
   ].join('\n');
 
   let mr: any;
@@ -97,7 +97,7 @@ export async function openFixMr(snapshotId: number, pvs: string[], conn: { url: 
       body: JSON.stringify({ branch, start_sha: s.commit_sha, commit_message: one ? `depmap: ${one.action!.text.split(':')[0].replace(/\.$/, '')}` : `depmap: fix ${chosen.length} risky packages`, actions }) });
     mr = await gl(`/projects/${project.id}/merge_requests`, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ source_branch: branch, target_branch: s.ref ?? project.default_branch, description, remove_source_branch: true,
-        title: one ? `Fix ${one.pv}: ${one.action!.kind} ${one.name} to ${one.action!.version}` : `Fix ${chosen.length} risky packages (depmap)` }) });
+        title: one ? `Fix ${one.pv}: ${one.action!.kind} ${one.name} to ${one.action!.version}` : `Fix ${chosen.length} risky packages (DepthMap)` }) });
   } catch (e) {
     // the branch exists from an earlier click: hand back its open merge request
     [mr] = await gl(`/projects/${project.id}/merge_requests?state=opened&source_branch=${encodeURIComponent(branch)}`);

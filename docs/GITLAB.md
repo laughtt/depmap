@@ -1,6 +1,6 @@
 # GitLab integration
 
-Everything runs locally: a mock GitLab, the depmap API, CI jobs under gitlab-ci-local, and a flow simulator in place of the Duo runtime. The clients speak real GitLab v4 REST, so going live means changing `GITLAB_URL` and the token, plus the UI steps at the end of this page.
+Everything runs locally: a mock GitLab, the DepthMap API, CI jobs under gitlab-ci-local, and a flow simulator in place of the Duo runtime. The clients speak real GitLab v4 REST, so going live means changing `GITLAB_URL` and the token, plus the UI steps at the end of this page.
 
 ## How the local stack maps to gitlab.com
 
@@ -31,7 +31,7 @@ The E2E needs the API on `:8787` (it starts `server/src/api/main.ts` in replay m
 Include it in any npm project and add a `depmap` stage. The template has three jobs:
 
 1. **`depmap:scan`** runs on MR and default-branch pipelines.
-   1. It applies human decisions from MR comments first. Bots and depmap's own notes are ignored. The commands are:
+   1. It applies human decisions from MR comments first. Bots and DepthMap's own notes are ignored. The commands are:
       - `/depmap accept <pkg@version> <N>d: <reason>` accepts the package until the time limit;
       - `/depmap pin <pkg@version>: <reason>` records a pin.
    2. It sends the lockfile, `package.json` and up to 200 JS/TS sources to `POST /api/scan`, with the MR's base sha.

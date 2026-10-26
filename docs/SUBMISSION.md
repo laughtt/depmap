@@ -1,6 +1,6 @@
 # Devpost submission draft
 
-> "depmap" is a working name. The organizers advise choosing a name that says what the project does, so pick the final name yourselves.
+> "DepthMap" is a working name. The organizers advise choosing a name that says what the project does, so pick the final name yourselves.
 
 **Path A (new project) · Supervised autonomy** (agents investigate and advise; humans accept risk, with an expiry) · **All 9 DevSecOps stages** · Built for GitLab Duo Agent Platform
 

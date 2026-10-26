@@ -152,7 +152,7 @@ check('MR !1: label depmap::amber', (await gl('/projects/1/merge_requests/1')).l
 const mr2 = pipeline('MR !2 debug patch', shop, 'debug-4.3.7', await mrVars(2, '2025-08-22T09:00:00Z'));
 const [note2] = await report(2);
 check('MR !2: gate passes', mr2.gate === 'pass');
-check('MR !2: short note: ready to merge, nothing to change', note2?.body.includes('✅ depmap · Ready to merge') && !note2.body.includes('needs a code change') && note2.body.length < 1500, `${note2?.body.length} chars`);
+check('MR !2: short note: ready to merge, nothing to change', note2?.body.includes('✅ DepthMap · Ready to merge') && !note2.body.includes('needs a code change') && note2.body.length < 1500, `${note2?.body.length} chars`);
 
 const replay = (asOf) => mrVars(4, asOf, { DEPMAP_START_FLOW: '1' });
 const mr4 = pipeline('MR !4 replay 2025-09-08 13:30', shop, 'deps-sept-8', await replay('2025-09-08T13:30:00Z'));

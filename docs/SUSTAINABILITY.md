@@ -1,6 +1,6 @@
 # Sustainability: what one dependency scan costs, measured with SCI
 
-depmap measures every scan with the Green Software Foundation's **Software Carbon Intensity** (SCI, ISO/IEC 21031:2024), and stores it with the snapshot (`snapshot.metrics`). The functional unit **R is one dependency scan**.
+DepthMap measures every scan with the Green Software Foundation's **Software Carbon Intensity** (SCI, ISO/IEC 21031:2024), and stores it with the snapshot (`snapshot.metrics`). The functional unit **R is one dependency scan**.
 
 ```
 SCI = (E × I + M) per R
@@ -44,7 +44,7 @@ A repeat scan costs about **900× less** than a cold one. These are the snapshot
 | Approach | gCO₂e per day |
 |---|---|
 | Crawl everything on every pipeline | 1,000 × 0.371 ≈ **371 g** |
-| depmap (crawl only new lockfiles, reuse the rest) | 100 × 0.371 + 900 × 0.0004 ≈ **37.5 g** |
+| DepthMap (crawl only new lockfiles, reuse the rest) | 100 × 0.371 + 900 × 0.0004 ≈ **37.5 g** |
 
 That is about **90% less**, before counting that facts are shared across repos.
 

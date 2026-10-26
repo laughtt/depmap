@@ -12,7 +12,7 @@ export function connectScreen(root: HTMLElement, connectionId?: string) {
       <section class="connect-intro">
         <nav class="crumb" aria-label="Breadcrumb"><a href="/">Repositories</a><span class="sep">/</span><b>Connect</b></nav>
         <h1>Map a repository</h1>
-        <p>Depmap reads the lockfile of a GitLab project, follows every dependency to the bottom of the tree and colours each one by how risky it is right now.</p>
+        <p>DepthMap reads the lockfile of a GitLab project, follows every dependency to the bottom of the tree and colours each one by how risky it is right now.</p>
         <ol class="steps">
           <li class="on"><b>Connect GitLab</b><span>Sign in, or paste a token with the read_api scope.</span></li>
           <li><b>Pick a project</b><span>Any project with a package-lock.json or pnpm-lock.yaml.</span></li>
@@ -34,7 +34,7 @@ export function connectScreen(root: HTMLElement, connectionId?: string) {
         <label class="field"><span>Personal access token</span>
           <div class="pw"><input name="token" type="password" placeholder="glpat-…" required spellcheck="false" autocomplete="off"><button type="button" class="link show">Show</button></div>
           <small class="err" hidden></small></label>
-        <p class="secure">${lock}<span>The token goes straight to the depmap server, which encrypts it with AES-256-GCM. It is never kept in this browser.</span></p>
+        <p class="secure">${lock}<span>The token goes straight to the DepthMap server, which encrypts it with AES-256-GCM. It is never kept in this browser.</span></p>
         <div class="form-error" role="alert" hidden></div>
         <button class="btn primary" type="submit">Connect</button>
       </form>`;
@@ -130,10 +130,10 @@ export function loginScreen(root: HTMLElement) {
     <main class="landing">
       <section class="hero">
         <h1>Every npm dependency, coloured by risk.</h1>
-        <p>Depmap maps the whole dependency tree of your GitLab projects, blocks risky versions in merge requests, and has an agent open the fix.</p>
+        <p>DepthMap maps the whole dependency tree of your GitLab projects, blocks risky versions in merge requests, and has an agent open the fix.</p>
       </section>
       <ul class="values">
-        <li><ol class="lv-time" aria-label="8 September 2025, UTC"><li><time>13:13</time>malware published</li><li class="hit"><time>13:30</time>depmap blocks it</li><li><time>14:26</time>first advisory</li></ol>
+        <li><ol class="lv-time" aria-label="8 September 2025, UTC"><li><time>13:13</time>malware published</li><li class="hit"><time>13:30</time>DepthMap blocks it</li><li><time>14:26</time>first advisory</li></ol>
           <div><b>Caught the chalk and debug malware</b><span>On 8 Sept 2025, 17 minutes after release and an hour before the first advisory.</span></div></li>
         <li><pre class="lv-code" aria-hidden="true"><span class="f">src/log.js:1</span><del>const chalk = require("chalk")</del><ins>import chalk from "chalk"</ins></pre>
           <div><b>Points at the line to change</b><span>Each risky upgrade comes with the file, the line and the fix.</span></div></li>
@@ -143,8 +143,8 @@ export function loginScreen(root: HTMLElement) {
       <section class="connect-card signin">
         <h2>Sign in</h2>
         <a class="btn oauth" href="/api/oauth/start">${tanuki}<span>Sign in with GitLab</span></a>
-        <p class="faint small">Lets depmap read the repositories your ${esc(new URL(session.gitlabUrl).host)} account can see.</p>
-        <div class="or"><span>or with a depmap account</span></div>
+        <p class="faint small">Lets DepthMap read the repositories your ${esc(new URL(session.gitlabUrl).host)} account can see.</p>
+        <div class="or"><span>or with a DepthMap account</span></div>
         <form class="connect-form" novalidate>
           <label class="field"><span>Username</span><input name="username" required autocomplete="username" spellcheck="false"></label>
           <label class="field"><span>Password</span><input name="password" type="password" required autocomplete="current-password"></label>

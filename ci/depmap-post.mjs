@@ -42,8 +42,8 @@ const rows = [...undecided].sort((a, b) => rank(a) - rank(b)).slice(0, 5);
 
 const out = [MARKER];
 out.push(r.gate.pass
-  ? `### ✅ depmap · Ready to merge${c.red ? ` · ${c.red} red package${c.red === 1 ? '' : 's'} accepted` : ''}`
-  : `### 🔴 depmap · Merge blocked: ${undecided.length} risky package${undecided.length === 1 ? '' : 's'}`);
+  ? `### ✅ DepthMap · Ready to merge${c.red ? ` · ${c.red} red package${c.red === 1 ? '' : 's'} accepted` : ''}`
+  : `### 🔴 DepthMap · Merge blocked: ${undecided.length} risky package${undecided.length === 1 ? '' : 's'}`);
 out.push('', `**[Open the fix list →](${page})** · ${c.total} packages · 🔴 ${c.red} · 🟠 ${c.amber} · 🟢 ${c.green}`);
 if (rows.length) {
   out.push('', '| | Package | Why | Fix |', '|---|---|---|---|');
@@ -66,7 +66,7 @@ out.push('', undecided.length
   ? `**Next:** comment \`${handle} fix all\` (or \`fix <package>\`) to get a fix merge request, or \`/depmap accept <package@version> 7d: <reason>\` to accept the risk.`
   : `**Next:** nothing to do.`);
 if (image) out.push('', '<details><summary>Map of this change</summary>', '', image, '', '</details>');
-out.push('', `<sub>depmap · pipeline ${r.pipelineId ?? '-'} · 0 GitLab credits${m ? ` · ${m.gco2e.toFixed(4)} gCO₂e` : ''} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);
+out.push('', `<sub>DepthMap · pipeline ${r.pipelineId ?? '-'} · 0 GitLab credits${m ? ` · ${m.gco2e.toFixed(4)} gCO₂e` : ''} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);
 const body = out.join('\n');
 
 const me = await gitlab('/user');

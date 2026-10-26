@@ -1,8 +1,10 @@
-# depmap: a dependency map and merge gate for npm supply-chain attacks
+# DepthMap: a dependency map and merge gate for npm supply-chain attacks
 
-depmap scans every npm dependency of every commit, blocks merge requests that pull in a suspicious version, shows which lines of your code it touches, and lets a GitLab Duo flow open the fix. It catches malicious releases from how they behave, so it can block them before any advisory exists.
+DepthMap scans every npm dependency of every commit, blocks merge requests that pull in a suspicious version, shows which lines of your code it touches, and lets a GitLab Duo flow open the fix. It catches malicious releases from how they behave, so it can block them before any advisory exists.
 
 Built for the GitLab Life After Code hackathon. Path A, supervised autonomy, all nine DevSecOps stages, MIT licensed.
+
+![How DepthMap works: a push runs the scan, the gate blocks risky packages, a short MR comment links the fix list, a GitLab Duo agent opens the fix merge request, and CI rescans to zero red](docs/img/architecture.gif)
 
 ## Quick links
 
@@ -14,7 +16,7 @@ Built for the GitLab Life After Code hackathon. Path A, supervised autonomy, all
 | Duo flow | `flows/depmap.flow.yml`, started by a failed pipeline or by mentioning the flow's account in an MR |
 | CI include | `https://lac.adtomic.co/ci/templates/depmap.gitlab-ci.yml` |
 
-![The map for a merge request: chalk@5.6.1 is red and matches the September 2025 account takeover](docs/img/map.png)
+![A tour of the app: the sign-in page, the map of a merge request with chalk@5.6.1 in red, its Upgrade tab, and the fix list](docs/img/tour.gif)
 
 ## The problem
 
@@ -27,7 +29,7 @@ Advisory scanners can't see these attacks in the first hours, because there's no
 ## How it works
 
 ```
-push / MR ──CI──> depmap:scan ──> depmap server
+push / MR ──CI──> depmap:scan ──> DepthMap server
                     lockfile -> full dependency graph -> registry facts
                     -> OSV and malware feeds -> security watchers
                     -> behaviour rules -> attack fingerprints
@@ -46,7 +48,7 @@ schedule ──> depmap:refresh: a new advisory re-colours that version
              in every repo and opens an issue in each one
 ```
 
-The CI template sends the lockfile (npm or pnpm, workspaces included) and your JS/TS sources to the depmap server. The server builds the full dependency graph and gives each `package@version` a colour. It goes red for a malicious-package record, a critical advisory, a release younger than the cooldown, a likely typosquat, an install script that wasn't there before, or a publisher change where provenance was dropped. Red packages are also compared with fingerprints of real attacks (chalk/debug 2025, Shai-Hulud 2025, ua-parser-js 2021, event-stream 2018), so the note can say "looks like the chalk/debug takeover, 4 of 4 signals".
+The CI template sends the lockfile (npm or pnpm, workspaces included) and your JS/TS sources to the DepthMap server. The server builds the full dependency graph and gives each `package@version` a colour. It goes red for a malicious-package record, a critical advisory, a release younger than the cooldown, a likely typosquat, an install script that wasn't there before, or a publisher change where provenance was dropped. Red packages are also compared with fingerprints of real attacks (chalk/debug 2025, Shai-Hulud 2025, ua-parser-js 2021, event-stream 2018), so the note can say "looks like the chalk/debug takeover, 4 of 4 signals".
 
 For every version bump, the upgrade advisor works out whether your code has to change. It finds your import and call sites with oxc, and compares the old and new tarballs' type definitions and module formats with the TypeScript compiler. For chalk 4 to 5 it reports `src/log.js:1`: chalk 5 is ESM-only, so `require('chalk')` throws `ERR_REQUIRE_ESM`. For a transitive bump it says the package reaches you through `shop -> debug -> ms` and needs no code change.
 
@@ -54,7 +56,9 @@ For every version bump, the upgrade advisor works out whether your code has to c
 
 Nothing has to be committed for the colours to change. A scheduled pipeline polls seven security sources (GitHub malware advisories, Aikido, StepSecurity, Wiz, Snyk, OpenSSF and CISA) and re-checks every branch. Risk belongs to the `package@version`, so one new advisory turns the same version red in every repo and opens a `security::watch` issue in each.
 
-![An MR thread: depmap's CI note, then the Duo flow's investigation](docs/img/mr-thread.png)
+![The map: Routes, Tree and Circle layouts of one scan, then a red package's drawer](docs/img/map.gif)
+
+![An MR thread: DepthMap's CI note, then the Duo flow's investigation](docs/img/mr-thread.png)
 *From our end-to-end run against the local GitLab stand-in: the CI note, then the flow's investigation.*
 
 ## The Duo flow
@@ -76,7 +80,7 @@ When a fix crosses a breaking version, a background job asks Claude Haiku 5.5 fo
 
 ## Every push gets a page
 
-![The page for one push: the dependency tree with paths to red packages, and what to fix before merging](docs/img/push-page.png)
+![The page for one push: the dependency tree with paths to red packages, and each package's fix: the package.json line, where the code uses it, and why](docs/img/fixes.gif)
 
 The `depmap` commit status links to `/repos/<group>/<project>/scans/<scan>`. The left side shows the tree upside down with your repo at the top and the paths to red packages in red. The right side lists what to do before merging: the version to move to (or stay on), the accept command, and every line of your code that has to change.
 
@@ -98,7 +102,7 @@ We replayed the attack against only what was public at each point in time:
 | 18:00 | the OSV `MAL-` records | blocked, fingerprint 4 of 4 |
 | 9 Sept, 13:00 | Wiz's write-up, picked up by the watchers | blocked, with the post linked |
 
-Advisories are filtered by publish date, a version that was unpublished later still counts in a past replay, and feeds that only give a date count as end of day. One side note: when we built depmap's own container, pnpm's release-age setting refused the same two fresh packages our cooldown rule had flagged in our lockfile.
+Advisories are filtered by publish date, a version that was unpublished later still counts in a past replay, and feeds that only give a date count as end of day. One side note: when we built DepthMap's own container, pnpm's release-age setting refused the same two fresh packages our cooldown rule had flagged in our lockfile.
 
 ## Lifecycle stages and prizes
 
@@ -202,7 +206,7 @@ The scan sends the file along, so the gate, the UI and the scheduled refresh all
 
 `pnpm test:gitlab-real` starts GitLab CE 19.5 and a runner in Docker. It pushes the demo repos, which pull in the template exactly as any project would, and runs real pipelines: main, three MRs (chalk 5, a debug patch, the 8 September replay), an accept, a re-run and a scheduled refresh. It then checks the notes, labels, uploads, commit statuses and issues.
 
-Pushing a `v*` tag runs the release pipeline. It runs the tests, pushes the image to the Container Registry, checks depmap's own lockfile with depmap, and creates a GitLab Release with a changelog and the SBOM attached.
+Pushing a `v*` tag runs the release pipeline. It runs the tests, pushes the image to the Container Registry, checks DepthMap's own lockfile with DepthMap, and creates a GitLab Release with a changelog and the SBOM attached.
 
 ## License
 
