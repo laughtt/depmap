@@ -79,7 +79,7 @@ describe('scan pipeline (replay fixtures)', () => {
     expect(chalk.sources.map((s) => s.url)).toContain('https://osv.dev/vulnerability/MAL-2025-46969');
     // a refresh keeps the scan's usage, so a package flagged later still points at the code that pulls it in
     const ms = (await remedies((await snap('main')).id)).find((r) => r.pv === 'ms@2.1.2')!;
-    expect(ms).toMatchObject({ usedBy: 'debug', action: { kind: 'upgrade', version: '2.1.3', packageJson: { before: null, after: '"overrides": { "ms": "2.1.3" }' } } });
+    expect(ms).toMatchObject({ usedBy: 'debug', action: { kind: 'upgrade', version: '2.1.3', packageJson: { before: null, after: '"overrides": { "ms": "^2.1.3" }' } } });
     expect(ms.usedIn[0]).toMatchObject({ file: 'src/server.js', code: "const debug = require('debug')('shop:server');" });
   });
 });

@@ -11,10 +11,11 @@ const run = promisify(execFile);
 
 // the new version in package.json: the dependency's range when we depend on it, an override when it comes in through another package
 export function editPackageJson(text: string, r: Remedy, pnpm: boolean) {
-  const pj = JSON.parse(text), v = r.action!.version!;
+  // an upgrade is a range (^fixed) so a parent that also moves can still get its newer copy; a pin is exact
+  const pj = JSON.parse(text), v = r.action!.kind === 'pin' ? r.action!.version! : `^${r.action!.version}`;
   const indent = text.match(/^([ \t]+)"/m)?.[1] ?? '  ';
   const section = ['dependencies', 'devDependencies', 'optionalDependencies'].find((k) => pj[k]?.[r.name] !== undefined);
-  if (r.direct && section) pj[section][r.name] = r.action!.kind === 'pin' ? v : `^${v}`;
+  if (r.direct && section) pj[section][r.name] = v;
   else if (pnpm) pj.pnpm = { ...pj.pnpm, overrides: { ...pj.pnpm?.overrides, [r.name]: v } };
   else pj.overrides = { ...pj.overrides, [r.name]: v };
   return JSON.stringify(pj, null, indent) + (text.endsWith('\n') ? '\n' : '');
@@ -52,10 +53,8 @@ async function relock(packageJson: string, lockName: string, lock: string, works
 // one merge request for one package, or for every red package of a scan ("fix all")
 export async function openFixMr(snapshotId: number, pvs: string[], conn: { url: string; token: string }, by: string) {
   const [s] = await q('select s.repo, s.ref, s.commit_sha, s.web_url, g.lockfile from snapshot s join graph g using (lockfile_sha) where s.id = $1', [snapshotId]);
-  const fixable = (await remedies(snapshotId, pvs)).filter((r) => r.action?.version);
-  // a transitive fix is left out when the package that pulls it in moves in the same MR: its new version brings its own
-  const moving = new Set(fixable.filter((r) => r.direct).map((r) => r.name));
-  const chosen = fixable.filter((r) => r.direct || !moving.has(r.usedBy));
+  // transitive fixes stay in even when their parent moves too: a parent's new version may still pin the vulnerable one
+  const chosen = (await remedies(snapshotId, pvs)).filter((r) => r.action?.version);
   if (!chosen.length) throw new GitLabError(400, `${pvs.length === 1 ? pvs[0] : 'These packages'} have no version to move to; replace or remove them by hand`);
   const gl = (path: string, init?: RequestInit) => gitlab(conn.url, conn.token, path, init);
   const project = await gl(`/projects/${encodeURIComponent(s.repo)}`);
@@ -85,7 +84,7 @@ export async function openFixMr(snapshotId: number, pvs: string[], conn: { url: 
         ...chosen.map((r) => `| \`${r.name}\` | ${r.version} → ${r.action!.version}${r.direct ? '' : ' (override)'} | ${r.why[0]?.split(/\.\s/)[0].replace(/\|/g, '\\|') ?? ''} |`)]),
     '', changes,
     ...(lock ? [] : ['', `The lockfile could not be regenerated here; run \`${pnpm ? 'pnpm install' : 'npm install'}\` on this branch.`]),
-    ...(left.length ? ['', `Not in this MR: ${left.map((pv) => `\`${pv}\``).join(', ')} (no fixed version, or fixed by its parent's upgrade above).`] : []),
+    ...(left.length ? ['', `Not in this MR: ${left.map((pv) => `\`${pv}\``).join(', ')} (no fixed version; replace or accept by hand).`] : []),
     ...(optional.length ? ['', `<details><summary>${optional.length} optional code change${optional.length > 1 ? 's' : ''}, not applied</summary>`,
       ...optional.flatMap((e: any) => ['', `\`${e.file}:${e.startLine}\`: ${e.why}`, '```diff', ...e.before.split('\n').map((l: string) => `-${l}`), ...e.after.split('\n').map((l: string) => `+${l}`), '```']), '</details>'] : []),
     '', `Sources: ${chosen.flatMap((r) => r.sources.slice(0, one ? 8 : 1)).map((x) => `[${x.label}](${x.url})`).join(' · ')}`,

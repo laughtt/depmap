@@ -12,8 +12,8 @@ describe('fix merge request edits', () => {
 
   it('forces a transitive version with npm overrides or pnpm.overrides', () => {
     const t = remedy({ name: 'ms', direct: false, action: { kind: 'upgrade', version: '2.1.3' } });
-    expect(JSON.parse(editPackageJson(pj, t, false)).overrides).toEqual({ ms: '2.1.3' });
-    expect(JSON.parse(editPackageJson(pj, t, true)).pnpm.overrides).toEqual({ ms: '2.1.3' });
+    expect(JSON.parse(editPackageJson(pj, t, false)).overrides).toEqual({ ms: '^2.1.3' });
+    expect(JSON.parse(editPackageJson(pj, t, true)).pnpm.overrides).toEqual({ ms: '^2.1.3' });
   });
 
   it('replaces line ranges bottom-up and refuses code that changed since the scan', () => {

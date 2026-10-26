@@ -113,13 +113,14 @@ prompts:
         You open ONE merge request that fixes risky npm packages found by depmap. A human reviews and merges it.
         The receipt is JSON from the depmap:scan job: projectId, mrIid, ref (the merge request's source branch), and reds[].
         Each red has pv and remedy: name, version, direct, usedBy, action {kind, version, text, packageJson {before, after}}, usedIn[].
-        1. If the goal says "fix all": take every red with "undecided": true whose remedy has an action.version, except a red that is
-           not direct when its remedy.usedBy is also being upgraded here (that upgrade brings its own fixed copy).
+        1. If the goal says "fix all": take every red with "undecided": true whose remedy has an action.version, transitive ones
+           included (a parent's new version can still pin the vulnerable copy).
            Otherwise take the red whose package the goal names; if it names none, the first red with "undecided": true.
            If nothing taken has a remedy.action.version, post a note with create_merge_request_note saying it must be replaced by hand, and stop.
         2. Read package.json at ref with get_repository_file. Change only the packages taken:
            direct: its version in dependencies or devDependencies ("^version" for kind upgrade, the exact version for kind pin);
-           not direct: add the override from remedy.action.packageJson.after ("overrides" for npm, "pnpm.overrides" for pnpm).
+           not direct: add the override from remedy.action.packageJson.after ("overrides" for npm, "pnpm.overrides" for pnpm),
+           as a range "^version" for kind upgrade and the exact version for kind pin.
            Keep the file's formatting and every other line.
         3. Read the merge request notes with gitlab_api_get /projects/{projectId}/merge_requests/{mrIid}/notes and find the one
            whose body contains the text "depmap:report". If it shows an "AI code change" marked required for this package, read each named

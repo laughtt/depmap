@@ -80,7 +80,7 @@ async function remedy(g: DepGraph, row: any, usage: Usage): Promise<Remedy | nul
   const npm = (v: string) => `https://www.npmjs.com/package/${n.name}/v/${v}`;
   const edit = (v: string, exact: boolean): Edit => n.direct
     ? { before: `"${n.name}": "${usage.ranges[n.name] ?? n.version}"`, after: `"${n.name}": "${exact ? v : `^${v}`}"` }
-    : { before: null, after: usage.pnpm ? `"pnpm": { "overrides": { "${n.name}": "${v}" } }` : `"overrides": { "${n.name}": "${v}" }` };
+    : { before: null, after: usage.pnpm ? `"pnpm": { "overrides": { "${n.name}": "${exact ? v : `^${v}`}" } }` : `"overrides": { "${n.name}": "${exact ? v : `^${v}`}" }` };
 
   const details = (await Promise.all((row.advisories ?? []).map((a: any) => advisoryDetail(a.id, n.name, n.version).catch(() => null)))).filter(Boolean) as AdvisoryDetail[];
   const fixes = details.map((d) => d.fixedIn?.version);

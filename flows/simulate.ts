@@ -196,7 +196,7 @@ const MOCK: Record<string, (inputs: any, call: (t: string, a: any) => Promise<an
     const pj = JSON.parse(await call('get_repository_file', { project_id, file_path: 'package.json', ref: r.ref }));
     const section = ['dependencies', 'devDependencies'].find((k) => pj[k]?.[rm.name]);
     if (rm.direct && section) pj[section][rm.name] = rm.action.kind === 'pin' ? rm.action.version : `^${rm.action.version}`;
-    else pj.overrides = { ...pj.overrides, [rm.name]: rm.action.version };
+    else pj.overrides = { ...pj.overrides, [rm.name]: rm.action.kind === 'pin' ? rm.action.version : `^${rm.action.version}` };
     const branch = `depmap/fix-${rm.name.replace(/[@/]/g, '-').replace(/^-/, '')}-${rm.action.version}`;
     await call('create_commit', { project_id, branch, start_branch: r.ref, commit_message: `depmap: ${rm.action.kind} ${rm.name} to ${rm.action.version}`,
       actions: [{ action: 'update', file_path: 'package.json', content: `${JSON.stringify(pj, null, 2)}\n` }] });
