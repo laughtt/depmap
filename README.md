@@ -1,243 +1,213 @@
-# depmap: catch the poisoned dependency before the advisory exists
+# depmap: a dependency map and merge gate for npm supply-chain attacks
 
-**Scanners tell you a package was malicious, hours after you merged it. depmap blocks it while it is still minutes old, shows where it touches your code, and has a GitLab Duo flow open the fix.**
+depmap scans every npm dependency of every commit, blocks merge requests that pull in a suspicious version, shows which lines of your code it touches, and lets a GitLab Duo flow open the fix. It catches malicious releases from how they behave, so it can block them before any advisory exists.
 
-Built for the GitLab **Life After Code** hackathon · Path A · Supervised autonomy · all 9 DevSecOps stages · MIT
+Built for the GitLab Life After Code hackathon. Path A, supervised autonomy, all nine DevSecOps stages, MIT licensed.
+
+## Quick links
 
 | | |
 |---|---|
-| **Live app** | https://lac.adtomic.co (judges: sign in as `judge`, password in the submission form) |
-| **Code** | https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/5037040/depmap |
-| **Demo video** | *(YouTube link)* |
-| **Duo flow** | `flows/depmap.flow.yml` (4 agents) · mention the flow's service account, e.g. `@ai-depmap-gitlab-ai-hackathon fix chalk` |
-| **Add it to any npm/pnpm project** | `include: - remote: https://lac.adtomic.co/ci/templates/depmap.gitlab-ci.yml` |
+| Live app | https://lac.adtomic.co (sign in as `judge`; the password is in the submission form) |
+| Code | https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/5037040/depmap |
+| Demo video | *(YouTube link)* |
+| Duo flow | `flows/depmap.flow.yml`, started by a failed pipeline or by mentioning the flow's account in an MR |
+| CI include | `https://lac.adtomic.co/ci/templates/depmap.gitlab-ci.yml` |
 
-![The depmap map of a merge request: chalk@5.6.1 is red and matches 4 of 4 signals of the September 2025 account takeover](docs/img/map.png)
+![The map for a merge request: chalk@5.6.1 is red and matches the September 2025 account takeover](docs/img/map.png)
 
 ## The problem
-On **8 September 2025** a phished npm maintainer republished **chalk, debug and 16 other packages**, together over 2 billion weekly downloads, with a crypto-stealer inside. The bad versions were live for about two hours.
 
-At **13:30 UTC, seventeen minutes after publication, no scanner had a record.** OSV's malicious-package entries arrived at 14:26 and 17:11 UTC, and the detailed write-ups came the next day. Any team that merged a routine dependency bump in that window shipped the payload, and every CVE-based gate let it through. Weeks later the Shai-Hulud worm did it again.
+On 8 September 2025 someone phished an npm maintainer and republished chalk, debug and 16 other packages with a crypto-stealer inside. Together they get over 2 billion downloads a week. The bad versions were up for about two hours.
 
-OWASP's 2025 Top 10 put *Software Supply Chain Failures* at #3, and notes that only 11 CVEs map to it. Advisory scanners are blind by design in the hours that matter. Even when they do fire, they stop at "this is vulnerable" and leave the hard questions to you: *where does it reach my code, what do I change, and who decided to accept it?*
+Seventeen minutes after they went out, at 13:30 UTC, no scanner had heard of them. OSV published its malicious-package records at 14:26 and 17:11, and the write-ups came the next day. A team that merged a routine dependency bump in that window shipped the payload, and a CVE-based check would have passed it. Shai-Hulud did the same thing a few weeks later.
 
-## The solution
-depmap keeps **every dependency of every commit, down to the bottom of the tree, as state**, and judges each `package@version` by how it *behaves*, not only by what advisories say.
-
-```
- push / MR ──CI──▶ depmap:scan ──▶ the depmap server
-                     │   lockfile → full graph → registry facts → OSV + malware feeds
-                     │   → 7 security watchers → behaviour rules → attack fingerprints
-                     │   → upgrade advisor: which lines of YOUR code a bump breaks
-                     ▼
-               depmap:gate ── red and undecided? ──▶ pipeline fails
-                     │                                   │
-               depmap:report                     GitLab Duo flow (4 agents)
-         one MR note, updated in place:          reader → triage → investigator
-         map image · red packages + evidence                 └─▶ fixer: commit + fix MR
-         · where your code uses them · the fix                    │
-                     │                                    a human reviews and merges
-          /depmap accept chalk@5.6.1 7d: reason   ◀── or decides, with an expiry
-                     │
- scheduled ──▶ depmap:refresh: one new advisory re-colours the same version
-               in EVERY repo and opens a security::watch issue in each
-```
-
-The Sept 8 replay, run hour by hour against what was public at each moment:
-
-| As of (UTC) | What existed | depmap's gate |
-|---|---|---|
-| 13:30 | chalk@5.6.1 and debug@4.4.2, 17 minutes old; **no advisory anywhere** | **blocked**: cooldown rule plus the takeover shape |
-| 18:00 | plus the OSV `MAL-` records | blocked, fingerprint "chalk/debug takeover" **4 of 4 signals** |
-| 9 Sept, 13:00 | plus Wiz's write-up, found by the watchers | blocked, with the post linked |
-
-The replay is honest: advisories are filtered by publish date, later unpublishing isn't visible to the past, and date-only feed timestamps count as end of day. Separately, when we containerised depmap, **pnpm's own release-age policy rejected the same two fresh packages our cooldown rule had flagged in our own lockfile.**
+Advisory scanners can't see these attacks in the first hours, because there's nothing to look up yet. And when they do fire, they tell you a package is bad but not where your code uses it or what to change.
 
 ## How it works
-1. **Scan every push and MR.** A two-line CI include sends the lockfile (npm or pnpm, including workspaces) and your JS/TS sources. Every `package@version` gets a colour:
-   - **red:** a malicious-package record, a critical advisory, a version still inside the cooldown, a typosquat, an install script that appeared out of nowhere, or a publisher handover with provenance dropped;
-   - **amber** or **green** otherwise.
 
-   Red packages are matched against **fingerprints of real attacks**: chalk/debug 2025, Shai-Hulud 2025, ua-parser-js 2021, event-stream 2018. A fingerprint needs a real anomaly to fire.
-2. **Show where it hurts.** The upgrade-impact advisor finds your import and call sites with `oxc`, then compares the old and new tarballs' `.d.ts` export surfaces (TypeScript compiler) and module formats. Each bump gets a verdict:
-   - `NEEDS_CHANGE`, with `file:line`, for example `src/log.js:1`: *chalk 5 is ESM-only, so `require('chalk')` throws `ERR_REQUIRE_ESM`*;
-   - `REVIEW`;
-   - `NO_CHANGE`;
-   - `PATH_ONLY`: *no code change; it reaches you via shop → debug → ms*.
-3. **Gate the merge.** `depmap:gate` fails while a red package is undecided. `depmap:report` posts **one MR note, edited in place**, with:
-   - a rendered map image;
-   - the red packages with linked evidence;
-   - the upgrade impact;
-   - the exact fix (a `package.json` line or an `overrides` entry).
+```
+push / MR ──CI──> depmap:scan ──> depmap server
+                    lockfile -> full dependency graph -> registry facts
+                    -> OSV and malware feeds -> security watchers
+                    -> behaviour rules -> attack fingerprints
+                    -> upgrade advisor (which lines of your code break)
+                         |
+                  depmap:gate  -- undecided red package? --> pipeline fails
+                         |                                       |
+                  depmap:report                        Duo flow: reader -> triage
+                  one MR note, edited in place          -> investigator (explains)
+                  (map, red packages, evidence,         -> fixer (commit + fix MR)
+                   where your code uses them, fix)               |
+                         |                               a person reviews and merges
+          /depmap accept chalk@5.6.1 7d: reason
+                         |
+schedule ──> depmap:refresh: a new advisory re-colours that version
+             in every repo and opens an issue in each one
+```
 
-   It also sets a `depmap` commit status that opens the push's own page.
-4. **The Duo flow investigates and fixes.** When the pipeline fails, the flow reads the scan receipt from the job log and explains each red package in plain language. A developer comments `@<flow account> fix chalk`, and the fixer:
-   - edits `package.json` and any required code lines;
-   - commits to `depmap/fix-chalk-…`;
-   - opens a fix MR.
+The CI template sends the lockfile (npm or pnpm, workspaces included) and your JS/TS sources to the depmap server. The server builds the full dependency graph and gives each `package@version` a colour. It goes red for a malicious-package record, a critical advisory, a release younger than the cooldown, a likely typosquat, an install script that wasn't there before, or a publisher change where provenance was dropped. Red packages are also compared with fingerprints of real attacks (chalk/debug 2025, Shai-Hulud 2025, ua-parser-js 2021, event-stream 2018), so the note can say "looks like the chalk/debug takeover, 4 of 4 signals".
 
-   `depmap:relock` regenerates the lockfile there (`--lockfile-only`, no scripts), and the new pipeline scans it again. **A human reviews and merges.**
-5. **Decide, on the record.** `/depmap accept chalk@5.6.1 7d: reason`, or `pin`, or the Decision tab, records who decided, why, and until when. When the expiry passes, the gate blocks again.
-6. **Watch the world, not just the commits.** A scheduled pipeline polls 7 security watchers (GitHub malware advisories, Aikido, StepSecurity, Wiz, Snyk, OpenSSF, CISA) and re-assesses every branch head. Risk belongs to the `package@version`, so **one advisory flips it in every repo at once** and opens an issue in each.
+For every version bump, the upgrade advisor works out whether your code has to change. It finds your import and call sites with oxc, and compares the old and new tarballs' type definitions and module formats with the TypeScript compiler. For chalk 4 to 5 it reports `src/log.js:1`: chalk 5 is ESM-only, so `require('chalk')` throws `ERR_REQUIRE_ESM`. For a transitive bump it says the package reaches you through `shop -> debug -> ms` and needs no code change.
 
-![The MR thread: depmap's CI note with the map, changed packages, red packages and upgrade impact, followed by the Duo flow's investigation](docs/img/mr-thread.png)
-*The MR thread from our end-to-end run against the local GitLab stand-in: the CI note (0 credits), then the Duo flow's investigation.*
+`depmap:gate` fails the pipeline while a red package is undecided. `depmap:report` posts a single MR note and keeps editing it rather than adding new ones. A person clears a package with `/depmap accept chalk@5.6.1 7d: reason` or `/depmap pin`. We store who decided, why and until when, and once the expiry passes the gate blocks again.
 
-## The Duo Agent Platform flow
-One flow (`flows/depmap.flow.yml`, flow registry v1, `environment: ambient`) with four agent components. CI does every deterministic step for 0 credits; **the LLM only runs for red packages.**
+Nothing has to be committed for the colours to change. A scheduled pipeline polls seven security sources (GitHub malware advisories, Aikido, StepSecurity, Wiz, Snyk, OpenSSF and CISA) and re-checks every branch. Risk belongs to the `package@version`, so one new advisory turns the same version red in every repo and opens a `security::watch` issue in each.
 
-| Agent | Tools | What it does |
+![An MR thread: depmap's CI note, then the Duo flow's investigation](docs/img/mr-thread.png)
+*From our end-to-end run against the local GitLab stand-in: the CI note, then the flow's investigation.*
+
+## The Duo flow
+
+`flows/depmap.flow.yml` is a flow registry v1 flow with four agents. Everything deterministic happens in CI and costs no credits; the agents only run when something is red.
+
+| Agent | Tools | Job |
 |---|---|---|
-| **reader** | `get_merge_request`, `gitlab_api_get`, `get_job_logs` | finds the MR's `depmap:scan` job and reads the receipt; returns `SKIP` when there's nothing to do |
-| **triage** | `get_merge_request` | routes the request: explain, or fix |
-| **investigator** | `create_merge_request_note` | one plain-language note per red package: what happened, what the fingerprint means, the safest action |
-| **fixer** | `get_repository_file`, `create_commit`, `create_merge_request`, `create_merge_request_note` | edits `package.json` and code, commits to `depmap/fix-*`, opens the fix MR and links it back |
+| reader | `get_merge_request`, `gitlab_api_get`, `get_job_logs` | finds the MR's scan job and reads its receipt, or stops if there's nothing to do |
+| triage | `get_merge_request` | decides whether the request is "explain" or "fix" |
+| investigator | `create_merge_request_note` | explains each red package: what happened, what the fingerprint means, the safest action |
+| fixer | `get_repository_file`, `create_commit`, `create_merge_request`, `create_merge_request_note` | edits `package.json` and any code that has to change, commits to `depmap/fix-<pkg>`, opens the MR |
 
-| Trigger | Fires when |
-|---|---|
-| **Pipeline events: Failed** | `depmap:gate` blocks a merge request |
-| **Mention** | someone writes `@<flow account> explain` or `@<flow account> fix <pkg>` in the MR |
-| **REST fallback** | `depmap:report` starts the flow through `POST /api/v4/ai/duo_workflows/workflows` when triggers aren't available |
+The flow starts when the pipeline fails, or when someone mentions its account in the MR (`@<flow account> fix chalk`). Where triggers aren't available, `depmap:report` starts it through `POST /api/v4/ai/duo_workflows/workflows`. On fix branches, `depmap:relock` regenerates the lockfile without running install scripts, and the new pipeline scans the result. A person still reviews and merges the fix MR.
 
-The flow never runs package code and never crawls the registry; CI already did that. Flow runs stay short and cheap. `flows/simulate.ts` validates the YAML and walks the flow against a mock GitLab in the tests.
+The flow never installs or runs package code; the scan already has everything it needs. `flows/simulate.ts` checks the YAML and walks the flow against a mock GitLab in our tests.
 
-**Where Claude works:**
-- The four flow agents run on the Duo Agent Platform's models.
-- When a fix crosses a breaking version, a background fixer uses **Claude Haiku 5.5** (`server/src/advisor/aifix.ts`, structured output plus web fetch). It reads the package's own migration notes and writes exact line edits, and we verify that each edit matches the file before showing it.
-- The fixer runs only where code can break: 2 of 17 red packages on our test app.
+When a fix crosses a breaking version, a background job asks Claude Haiku 5.5 for the code change (`server/src/advisor/aifix.ts`). It reads the package's own migration notes and returns exact line edits, and we check that every edit matches the file before showing it. On our test app that was 2 of the 17 red packages; the other 15 needed no code change.
 
 ## Every push gets a page
-![The per-push page: the dependency tree with chains to red packages in red, and a "To merge" list with each package's evidence, fingerprint and fix](docs/img/push-page.png)
 
-The `depmap` commit status links to `/repos/<group>/<project>/scans/<scan>`:
-- **left:** the tree upside down, your repo on top, with every chain to a red package drawn in red;
-- **right:** what to do to merge. For each package: the fix version or the version to stay on, the `/depmap accept` command, and every `file:line` your code must change.
+![The page for one push: the dependency tree with paths to red packages, and what to fix before merging](docs/img/push-page.png)
 
-## All dependencies: one map of everything we've seen
-![The All dependencies page: 10,621 packages and 33,310 links, sized by how many packages depend on each one](docs/img/world.png)
+The `depmap` commit status links to `/repos/<group>/<project>/scans/<scan>`. The left side shows the tree upside down with your repo at the top and the paths to red packages in red. The right side lists what to do before merging: the version to move to (or stay on), the accept command, and every line of your code that has to change.
 
-- **One map across every repo:** one node per package, all versions folded together, sized by how many packages depend on it.
-- **Click a package** for its full version history: publish date, publisher, provenance, the advisories, and for each advisory:
-  - the affected range;
-  - the CWE;
-  - **the fixed version** (or the newest clean one when no fix exists);
-  - the fix commit;
-  - the advisory's own vulnerable code and PoC.
-- **Every package is classified three ways:**
-  - **what it does:** 14 categories;
-  - **how it's used:** runtime or dev-only, direct, install script;
-  - **how far to trust it:** one maintainer, **load-bearing** (10 or more dependents and a single maintainer), no provenance, stale, deprecated.
-- **Filters** dim everything that doesn't match. *Runtime http packages with one maintainer and no provenance* is one click.
-- **Kept fresh by a crawler** (`scripts/crawl.ts`) that follows each package to its own repo's lockfile. The hosted instance holds about **10.9k packages and 29k versions**.
+## All dependencies
 
-## Prize tracks
-| Track | Why depmap qualifies |
-|---|---|
-| **Path A: Supervised** | Agents investigate and open fix MRs on their own; a human merges or accepts the risk, with an expiry and an audit trail |
-| **Most Stages Covered** | All nine, each with an artifact you can open, in `docs/STAGES.md`: plan (`security::watch` issues) · create (fix MRs) · verify (the gate) · package (CycloneDX SBOM, image) · secure (rules, feeds, fingerprints) · release (tag pipeline, GitLab Release) · configure (`.depmap.yml`, CODEOWNERS) · monitor (scheduled refresh, watchers, commit status) · govern (decisions with expiry, audit events) |
-| **Most Environmentally Impactful** | An SCI receipt on every scan (below and `docs/SUSTAINABILITY.md`) |
-| **Most Creative** | Behaviour fingerprints of real attacks, an honest hour-by-hour replay of a real incident, and one map of every dependency we have ever seen |
-| **Google Cloud bonus** | `deploy/cloudrun-deploy.sh` deploys to Cloud Run with Cloud SQL in `europe-north1`, chosen for its grid intensity. The current live instance runs on EC2. |
+![All dependencies: 10,621 packages and 33,310 links in one map](docs/img/world.png)
 
-## Sustainability (SCI)
-Every scan records its Software Carbon Intensity:
-- **E:** Cloud Carbon Footprint coefficients applied to measured CPU, memory and bytes;
-- **I:** location-based;
-- **M:** excluded, and we say so.
+The All dependencies page is one map of every package we have scanned, across all repos. Each node is a package, with all its versions folded together and sized by how many other packages depend on it. Click one to see each version's publish date, publisher, provenance and advisories. For each advisory it shows the affected range, the fixed version (or the newest clean one if there's no fix), the fix commit, and the vulnerable code from the advisory itself.
 
-| Run | Wall time | Network | gCO₂e |
+Packages are also labelled by what they do, how they're used (runtime or dev only, direct, install script) and how far to trust them. One maintainer and no provenance are labels; so is load-bearing, which means ten or more dependents and a single maintainer. The filters make questions like "runtime HTTP packages with one maintainer" a click. `scripts/crawl.ts` keeps the map growing by following packages back to their own repos' lockfiles. The hosted instance has about 10,900 packages and 29,000 versions.
+
+## Replaying 8 September 2025
+
+We replayed the attack against only what was public at each point in time:
+
+| As of (UTC) | What was public | Gate |
+|---|---|---|
+| 13:30 | chalk@5.6.1 and debug@4.4.2, 17 minutes old, no advisory | blocked by the cooldown rule and the takeover pattern |
+| 18:00 | the OSV `MAL-` records | blocked, fingerprint 4 of 4 |
+| 9 Sept, 13:00 | Wiz's write-up, picked up by the watchers | blocked, with the post linked |
+
+Advisories are filtered by publish date, a version that was unpublished later still counts in a past replay, and feeds that only give a date count as end of day. One side note: when we built depmap's own container, pnpm's release-age setting refused the same two fresh packages our cooldown rule had flagged in our lockfile.
+
+## Lifecycle stages and prizes
+
+All nine stages are covered, with a file or page for each in `docs/STAGES.md`:
+- plan: issues from the scheduled refresh;
+- create: fix MRs;
+- verify: the gate;
+- package: a CycloneDX SBOM and the container image;
+- secure: rules, feeds and fingerprints;
+- release: the tag pipeline and GitLab Release;
+- configure: `.depmap.yml` behind CODEOWNERS;
+- monitor: the refresh, the watchers and commit statuses;
+- govern: decisions with an expiry, plus an audit log.
+
+We're entering Path A Supervised (the agents investigate and open fixes; people merge or accept the risk), Most Stages Covered, Most Environmentally Impactful and Most Creative. For the Google Cloud bonus there's `deploy/cloudrun-deploy.sh` (Cloud Run and Cloud SQL in `europe-north1`); the live instance itself runs on EC2.
+
+## Sustainability
+
+Each scan records its Software Carbon Intensity. Energy comes from Cloud Carbon Footprint coefficients applied to the CPU, memory and bytes we measure; grid intensity is location-based; embodied emissions are left out, and the receipt says so.
+
+| Run | Time | Network | gCO₂e |
 |---|---|---|---|
-| A 428-package Next.js app, cold | 29.3 s | 573 requests, 386 MB | 0.231 |
-| Same app, warm | **47 ms** | **0 requests** | ≈0.0000 |
+| 428-package Next.js app, first scan | 29.3 s | 573 requests, 386 MB | 0.231 |
+| same app, next scan | 47 ms | none | ~0 |
 
-- **Why warm is free:** registry facts are immutable per `package@version`, so they're cached once and shared by every repo. Graphs are keyed by lockfile hash. "The world changed" is a re-assessment, not a re-crawl.
-- **Region:** `europe-north1` (30 g/kWh) instead of a `us-east1` runner (579 g/kWh) cuts I by about 95% for identical work.
-- **The LLM runs only for red packages.** Everything else is deterministic CI.
+The second scan is almost free because registry facts never change for a given `package@version`. We fetch them once and share them across repos, and we key graphs by lockfile hash. A new advisory triggers a re-check, not a re-download. Running in `europe-north1` (30 g/kWh) instead of `us-east1` (579 g/kWh) cuts grid intensity by about 95%. Details are in `docs/SUSTAINABILITY.md`.
 
-## Tech stack
-| Layer | What |
-|---|---|
-| Graph core | **Rust → WebAssembly**: binary graph codec, stable layout, paths to root, diff. **50k nodes laid out in about 7 ms**, cached in IndexedDB |
-| Map | Vite + TypeScript, sigma.js / graphology (WebGL), ForceAtlas2 for the All dependencies map |
-| Server | Node 26 (TypeScript type stripping), Hono, PostgreSQL 17 |
-| Analysis | oxc-parser (call sites), the TypeScript compiler API (`.d.ts` diff), semver |
-| Data | npm registry, OSV.dev, GitHub malware advisories, 7 security watchers, e18e `module-replacements` |
-| GitLab | Duo Agent Platform flow, CI/CD template, MR notes, labels, commit statuses, issues, schedules, CycloneDX reports, Releases, Container Registry, OAuth |
-| AI | GitLab Duo flow agents; Claude Haiku 5.5 for code fixes across breaking versions |
+## Built with
 
-## Project structure
+- Rust compiled to WebAssembly for the graph core (layout, paths to root, diff); it lays out 50k nodes in about 7 ms and caches the layout in IndexedDB.
+- Vite, TypeScript, sigma.js and graphology for the maps, with ForceAtlas2 for the All dependencies view.
+- Node 26, Hono and PostgreSQL 17 on the server.
+- oxc-parser and the TypeScript compiler API for the upgrade advisor.
+- Data from the npm registry, OSV.dev, GitHub malware advisories, seven security sources and e18e's `module-replacements`.
+- On GitLab: a Duo Agent Platform flow, a CI/CD template, MR notes, labels, commit statuses, issues, schedules, CycloneDX reports, Releases, the Container Registry and OAuth.
+- Claude Haiku 5.5 for code fixes across breaking versions.
+
 ```
-crates/graph-core/        Rust/WASM graph core (docs/CONTRACT.md)
-server/src/scanner/       lockfiles, registry facts, OSV, rules, fingerprints, scan, refresh, SCI meter, classify
-server/src/advisor/       upgrade-impact advisor, Claude fixer
-server/src/watchers/      the 7 security watchers
-server/src/connector/     GitLab connector: PAT or OAuth with PKCE, tokens AES-256-GCM encrypted
-server/src/gitlab/        local GitLab stand-in (REST v4 shapes, OAuth, uploads, MR viewer, flow start)
-web/                      the map UI
-ci/, ci/templates/        CI scripts and the includeable template
-flows/                    the Duo flow (v1 YAML) and its simulator
-.gitlab/duo/              agent-config.yml for the flow runtime
-scripts/                  demo, seed, scan-local, crawl, local GitLab, Pages export, test-all
-deploy/                   Dockerfile, compose.prod.yml + ec2-deploy.sh, cloudrun-deploy.sh
-docs/                     STAGES, GITLAB, SUSTAINABILITY, GREEN, CONTRACT, DEVPOST, DEMO_SCRIPT
+crates/graph-core/     Rust/WASM graph core (docs/CONTRACT.md)
+server/src/scanner/    lockfiles, registry facts, OSV, rules, fingerprints, refresh, SCI, classification
+server/src/advisor/    upgrade advisor and the Claude fixer
+server/src/watchers/   the seven security sources
+server/src/connector/  GitLab connector (PAT or OAuth with PKCE; tokens encrypted with AES-256-GCM)
+server/src/gitlab/     local GitLab stand-in used by the tests
+web/                   the UI
+ci/                    CI scripts and the includeable template
+flows/                 the Duo flow and its simulator
+scripts/               demo, seeding, local scans, crawler, local GitLab, Pages export, test runner
+deploy/                Dockerfile, EC2 compose and deploy script, Cloud Run script
 ```
 
-## Try it
-**Option A: see it running.** Open https://lac.adtomic.co and sign in as `judge`. The repos, the per-push pages, the Watchers page and the All dependencies map are all there.
+## Running it
 
-**Option B: run it locally, offline.**
-```
-scripts/demo.sh        # Postgres + the seeded Sept 8 timeline + API/UI on :8787 + local GitLab on :8929/view
-```
-Or step by step:
+The quickest way is the hosted app: https://lac.adtomic.co, signed in as `judge`.
+
+To run it locally and offline, `scripts/demo.sh` starts Postgres, loads the 8 September timeline and serves the app on :8787 and a local GitLab on :8929/view. Step by step:
+
 ```
 pnpm install
-pnpm db:up                                   # Postgres 17 in Docker on :5433 (named volume db-data)
+pnpm db:up                                   # Postgres 17 in Docker on :5433
 pnpm build:wasm && pnpm build:web
 DATA_MODE=replay ADVISORY_FEED=fixtures/feed/simulated-advisory.json node scripts/seed-demo.ts --reset
-DATA_MODE=replay node server/src/api/main.ts # API + UI on http://localhost:8787
-node server/src/gitlab/mock.ts               # local GitLab on http://localhost:8929 (/view shows the MRs)
+DATA_MODE=replay node server/src/api/main.ts # app on http://localhost:8787
+node server/src/gitlab/mock.ts               # local GitLab on http://localhost:8929
 ```
-- **`DATA_MODE`:** `replay` uses recorded public data in `fixtures/` (offline and deterministic), `record` fetches what's missing, and `live` always fetches.
-- **Scan any project on disk** (read-only): `node scripts/scan-local.ts ../my-app`.
-- **Grow the All dependencies map:** `node scripts/crawl.ts`. Ctrl-C stops it, and it resumes from its queue.
-- **Export the GitLab Pages security site:** `node scripts/export-pages.ts public`.
 
-**Option C: add it to your project.**
+`DATA_MODE=replay` uses only the recorded public data in `fixtures/`, `record` fetches whatever is missing, and `live` always fetches. To scan a project on disk, run `node scripts/scan-local.ts ../my-app`. To grow the All dependencies map, run `node scripts/crawl.ts` (Ctrl-C stops it and it resumes from its queue). To export the GitLab Pages security site, run `node scripts/export-pages.ts public`.
+
+To use it on your own project, add the template:
+
 ```yaml
 include:
   - remote: https://lac.adtomic.co/ci/templates/depmap.gitlab-ci.yml
 ```
-Set `DEPMAP_API_URL`, plus the masked `DEPMAP_TOKEN` and `GITLAB_TOKEN`. Then create the flow in AI › Flows from `flows/depmap.flow.yml` and add the triggers. `docs/GITLAB.md` has every step.
 
-## Policy as code: `.depmap.yml`
+Set `DEPMAP_API_URL`, and the masked `DEPMAP_TOKEN` and `GITLAB_TOKEN` variables. Then create the flow from `flows/depmap.flow.yml` under AI > Flows and add its triggers. `docs/GITLAB.md` walks through every step.
+
+## Policy
+
+A `.depmap.yml` at the root of a repo changes the rules for that repo:
+
 ```yaml
-cooldown_hours: 48          # red while younger than this, amber "recent" up to 3x (default 24)
-block_on: [red, amber]      # colours that fail depmap:gate (default [red])
-allow:                      # standing accept decisions: name@semver-range plus why
+cooldown_hours: 48          # red while younger than this, amber up to 3x (default 24)
+block_on: [red, amber]      # colours that fail the gate (default [red])
+allow:                      # standing decisions: name@semver-range and a reason
   - pkg: debug@~4.4.0
     reason: pinned by the logging team
 licenses:
-  deny: [AGPL-3.0]          # the package turns red; also matches -only / -or-later
+  deny: [AGPL-3.0]
 ```
-- `depmap:scan` sends the file with every scan. The rules, the gate, the UI and the scheduled refresh all judge with the same policy.
-- A typo or unknown key fails the scan.
-- The gate log names the rule for each blocked package, e.g. `x chalk@5.6.1  [policy: block_on: red · cooldown_hours: 48]`.
-- `CODEOWNERS` protects `.depmap.yml` and `ci/`.
 
-## Proof it works
+The scan sends the file along, so the gate, the UI and the scheduled refresh all apply the same policy. An unknown key fails the scan. The gate log says which rule blocked each package, e.g. `x chalk@5.6.1  [policy: block_on: red · cooldown_hours: 48]`. CODEOWNERS protects the file and `ci/`.
+
+## Tests
+
 `pnpm test:all` runs everything and writes `test-results/summary.json`:
-- **42 server tests** (vitest, on a separate `depmap_test` database), **11 Rust tests** and **16 Playwright browser tests** (mock and live API);
-- **the GitLab end-to-end MR scenarios** under gitlab-ci-local: 22/22 checks;
-- **the complete pipeline on a real GitLab** (`pnpm test:gitlab-real`): GitLab CE 19.5 and a runner in Docker. It pushes the demo repos, which include the template remotely, then runs main, three MRs (chalk 5, a debug patch, the Sept 8 replay), a human `/depmap accept`, a re-run and a scheduled refresh. It checks the notes, labels, uploads, commit statuses and issues.
+- 42 server tests (vitest, on a separate test database);
+- 11 Rust tests;
+- 16 Playwright tests, against mock data and the live API;
+- 22 checks across the GitLab MR scenarios run under gitlab-ci-local.
 
-**Releases:** pushing a `v*` tag runs the tests, pushes the image to the Container Registry, gates depmap's own lockfile with depmap, and creates a GitLab Release with a changelog and the CycloneDX SBOM attached.
+`pnpm test:gitlab-real` starts GitLab CE 19.5 and a runner in Docker. It pushes the demo repos, which pull in the template exactly as any project would, and runs real pipelines: main, three MRs (chalk 5, a debug patch, the 8 September replay), an accept, a re-run and a scheduled refresh. It then checks the notes, labels, uploads, commit statuses and issues.
+
+Pushing a `v*` tag runs the release pipeline. It runs the tests, pushes the image to the Container Registry, checks depmap's own lockfile with depmap, and creates a GitLab Release with a changelog and the SBOM attached.
 
 ## Hosting
-- **https://lac.adtomic.co:** one EC2 host. Caddy terminates TLS in front of the depmap container and Postgres (`deploy/compose.prod.yml`); redeploy with `deploy/ec2-deploy.sh`.
-- **Sign-in:** with `REQUIRE_LOGIN=1`, every API route needs either a depmap account (scrypt-hashed) or GitLab OAuth with PKCE (scope `read_api`), which also connects your projects. CI jobs authenticate with the masked `DEPMAP_TOKEN`.
-- **Private scans stay put:** scans of private repos (`fixtures/local`) never leave the machine; `.dockerignore` keeps them out of the image.
-- **Cloud Run:** see `deploy/cloudrun-deploy.sh` and `docs/GITLAB.md`.
+
+https://lac.adtomic.co runs on a single EC2 host: Caddy for TLS in front of the depmap container and Postgres (`deploy/compose.prod.yml`). Redeploy with `deploy/ec2-deploy.sh`. With `REQUIRE_LOGIN=1`, every API call needs a depmap account or a GitLab sign-in (OAuth with PKCE, scope `read_api`), and CI jobs use the masked `DEPMAP_TOKEN`. Scans of private repos stay on the machine that made them; `.dockerignore` keeps `fixtures/local` out of the image.
 
 ## License
-MIT. See `LICENSE`.
+
+MIT, see `LICENSE`.

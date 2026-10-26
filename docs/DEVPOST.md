@@ -36,6 +36,9 @@ depmap runs inside GitLab and makes every npm dependency of a project visible, c
      2. commits to `depmap/fix-chalk-5.6.0`;
      3. opens a fix merge request and links it back.
    - `depmap:relock` regenerates the lockfile in that MR's pipeline, which scans again. **A human reviews and merges: supervised autonomy.**
+   - **On a real app's first scan:** adtomic (640 packages) had 17 red packages, so its build was blocked.
+     - One comment, `@… fix all`, made the agent open a single MR (4 direct upgrades, 13 overrides).
+     - `depmap:relock` regenerated the lockfile, and the rescan showed **0 red**. The full pipeline, including build, went green.
 4. **Decide, with an audit trail.** `/depmap accept chalk@5.6.1 7d: reason` (or the Decision tab: fix with an MR, accept, or pin) records who decided, why, and until when. The gate respects it until it expires.
 5. **Watch the world change.**
    - A scheduled `depmap:refresh` re-assesses every repo against today's advisories and the security blogs (GitHub malware advisories, Aikido, StepSecurity, Wiz, Snyk, OpenSSF, CISA).
