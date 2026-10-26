@@ -237,7 +237,7 @@ const MOCK: Record<string, (inputs: any, call: (t: string, a: any) => Promise<an
         const young = red.reasons.some((x: any) => ['cooldown', 'recent'].includes(x.code));
         out.push('', `**\`${red.pv}\`** needs a decision.`);
         out.push(`- **What happened:** ${red.reasons.map((x: any) => `${x.text} ([${x.code}](${x.url}))`).join(' ')}`);
-        out.push(`- **What the fingerprint means:** ${fp ? `it matches ${fp.matched} of ${fp.total} signals of *${fp.title}*. ${fp.summary} ${fp.matched === fp.total ? 'A full match means this release has the shape of a hijacked publish, not a normal update.' : 'A partial match is a warning sign, not proof.'}` : 'no known attack fingerprint matches; the reasons above stand on their own.'}`);
+        out.push(`- **What the fingerprint means:** ${fp ? `it matches ${fp.matched} of ${fp.total} signals of *${fp.title}* ([background](${fp.url})). ${fp.matched === fp.total ? 'A full match means this release has the shape of a hijacked publish, not a normal update.' : 'A partial match is a warning sign, not proof.'}` : 'no known attack fingerprint matches; the reasons above stand on their own.'}`);
         out.push(`- **Safest action:** ${prev && prev !== 'added' ? `stay on the version this MR replaces: revert to \`${name(red.pv)}@${prev}\` and comment \`/depmap pin ${name(red.pv)}@${prev}: suspected malicious release\`.` : `remove \`${red.pv}\` from this MR.`}${red.fixed ? ` A fixed version exists: \`${red.fixed}\`.` : ''}${young ? ' If you need the upgrade, wait out the cooldown and take the next clean release.' : ''} Only if you have verified the tarball: \`/depmap accept ${red.pv} 1d: <evidence>\`.`);
       }
     }

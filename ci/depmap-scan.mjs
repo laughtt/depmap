@@ -54,15 +54,21 @@ const names = bin.subarray(bin.length - bin.readUInt32LE(16)).toString('utf8').s
 const color = Buffer.from(state.color, 'base64');
 const colorOf = new Map(names.map((pv, i) => [pv, COLORS[color[i]]]));
 
+const slim = (rm) => rm && {
+  name: rm.name, version: rm.version, direct: rm.direct, usedBy: rm.usedBy,
+  action: rm.action && { kind: rm.action.kind, version: rm.action.version, packageJson: rm.action.packageJson },
+  usedIn: rm.usedIn.slice(0, 3).map((u) => `${u.file}:${u.line}`),
+};
 const reds = await Promise.all(names.filter((pv, i) => i > 0 && (color[i] === 2 || result.gate.undecidedReds.includes(pv))).slice(0, 25).map(async (pv) => {
   const d = await depmap(`/api/pv?pv=${encodeURIComponent(pv)}&snapshot=${id}`);
   const fp = d.fingerprint;
   return {
     pv, undecided: result.gate.undecidedReds.includes(pv), decision: d.decision,
-    reasons: d.reasons.map((r) => ({ code: r.code, text: r.text, url: r.url })),
+    reasons: d.reasons.slice(0, 3).map((r) => ({ code: r.code, text: r.text.slice(0, 200), url: r.url })),
     fixed: d.advisories?.flatMap((a) => a.fixed ?? [])[0] ?? d.reasons.map((r) => r.text.match(/Fixed in ([\w.+-]+?)\.?$/)?.[1]).find(Boolean) ?? null,
-    fingerprint: fp && { id: fp.id, title: fp.title, matched: fp.matched, total: fp.total, url: fp.url, summary: fp.summary },
-    remedy: result.reds?.find((x) => x.pv === pv)?.remedy ?? null,
+    fingerprint: fp && { id: fp.id, title: fp.title, matched: fp.matched, total: fp.total, url: fp.url },
+    // only what the Duo fixer needs: the flow passes this receipt between agents, so every byte is read again
+    remedy: slim(result.reds?.find((x) => x.pv === pv)?.remedy),
   };
 }));
 
