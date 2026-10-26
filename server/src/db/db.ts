@@ -2,6 +2,8 @@ import pg from 'pg';
 import { readFile } from 'node:fs/promises';
 
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? 'postgres://depmap:depmap@localhost:5433/depmap', max: 10 });
+// a DB restart drops idle connections; without a listener pg throws and the whole server exits
+pool.on('error', (e) => console.error('db:', e.message));
 
 export async function migrate() {
   await pool.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));

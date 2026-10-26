@@ -1,7 +1,7 @@
 // depmap:scan: apply human decisions from MR notes, scan the lockfile, write depmap.json and print the receipt block last.
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { API, APP, COLORS, MR, PROJECT, GITLAB, env, depmap, gitlab, logger, parseDecisionCommands, registerJob } from './depmap-lib.mjs';
+import { API, APP, COLORS, MR, PROJECT, GITLAB, auth, env, depmap, gitlab, logger, parseDecisionCommands, registerJob } from './depmap-lib.mjs';
 
 const dir = process.cwd(); // runners start jobs in CI_PROJECT_DIR
 const repo = env.CI_PROJECT_PATH;
@@ -42,13 +42,13 @@ if (MR && GITLAB) {
 const result = await depmap('/api/scan', {
   repo, ref, commitSha: env.CI_COMMIT_SHA, baseSha: env.CI_MERGE_REQUEST_DIFF_BASE_SHA || undefined, mrIid: MR,
   lockfile: readFileSync(join(dir, lockName), 'utf8'), packageJson: existsSync(join(dir, 'package.json')) ? readFileSync(join(dir, 'package.json'), 'utf8') : undefined,
-  sources, asOf: env.DEPMAP_AS_OF || undefined,
+  sources, asOf: env.DEPMAP_AS_OF || undefined, webUrl: env.CI_PROJECT_URL,
 });
 const id = result.snapshotId;
 
 // colours per package: names from the graph binary (§1 of the contract), colours from the snapshot state (§2)
 const state = await depmap(`/api/snapshots/${id}/state`);
-const bin = Buffer.from(await (await fetch(`${API}/api/graphs/${result.lockfileSha}.bin`)).arrayBuffer());
+const bin = Buffer.from(await (await fetch(`${API}/api/graphs/${result.lockfileSha}.bin`, { headers: auth })).arrayBuffer());
 const names = bin.subarray(bin.length - bin.readUInt32LE(16)).toString('utf8').split('\n');
 const color = Buffer.from(state.color, 'base64');
 const colorOf = new Map(names.map((pv, i) => [pv, COLORS[color[i]]]));
@@ -61,6 +61,7 @@ const reds = await Promise.all(names.filter((_, i) => i > 0 && color[i] === 2).s
     reasons: d.reasons.map((r) => ({ code: r.code, text: r.text, url: r.url })),
     fixed: d.advisories?.flatMap((a) => a.fixed ?? [])[0] ?? d.reasons.map((r) => r.text.match(/Fixed in ([\w.+-]+?)\.?$/)?.[1]).find(Boolean) ?? null,
     fingerprint: fp && { id: fp.id, title: fp.title, matched: fp.matched, total: fp.total, url: fp.url, summary: fp.summary },
+    remedy: result.reds?.find((x) => x.pv === pv)?.remedy ?? null,
   };
 }));
 
@@ -78,7 +79,7 @@ const receipt = {
   changed,
   advice: result.advice.map((a) => ({ package: a.package, from: a.from, to: a.to, direct: a.direct, verdict: a.verdict, summary: a.summary, items: a.items, paths: a.paths })),
   reds,
-  urls: { page: `${APP}/#/c/${repo}/${id}`, map: `${APP}/#/repo/${repo}/${id}`, delta: `${API}/api/snapshots/${id}/delta` },
+  urls: { page: `${APP}/repos/${repo}/scans/${id}`, map: `${APP}/repos/${repo}/map/${id}`, delta: `${API}/api/snapshots/${id}/delta` },
 };
 let block = JSON.stringify(receipt);
 if (block.length > 95_000) {

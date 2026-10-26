@@ -40,7 +40,8 @@ test("the 50k-node mock loads and logs layoutMs", async ({ page }) => {
   test.skip(live, "synthetic graph is mock-only");
   const logs: string[] = [];
   page.on("console", (m) => m.text().includes("[depmap]") && logs.push(m.text()));
-  await page.goto(url("/repo/synthetic%2Fmonorepo-50k", "big=1"));
+  await page.addInitScript(() => localStorage.setItem("depmap-layout", "tree"));
+  await page.goto(url("/repos/synthetic/monorepo-50k", "big=1"));
   await ready(page, 60_000);
   const r = await dm<{ nodeCount: number; layoutMs: number; cacheHit: boolean }>(page, "({ nodeCount: dm.nodeCount, layoutMs: dm.layoutMs, cacheHit: dm.cacheHit })");
   expect(r.nodeCount).toBe(50_000);
@@ -78,7 +79,7 @@ test("search finds a package and opens it", async ({ page }) => {
 });
 
 test("the per-push page hangs the tree under the repo and says what to do to merge", async ({ page }) => {
-  await page.goto(url(`/c/${REPO}/${SNAP.red}`));
+  await page.goto(url(`/repos/${REPO}/scans/${SNAP.red}`));
   await ready(page);
   await expect(page.locator(".ch-title")).toContainText(REPO);
   await expect(page.locator(".gate")).toContainText("Blocked");
@@ -91,9 +92,22 @@ test("the per-push page hangs the tree under the repo and says what to do to mer
   await page.locator(".deps li .pv-link").first().click();
   expect(await dm<number>(page, "dm.map.sel")).toBeGreaterThan(0);
   await shot(page, "commit-page");
-  await page.goto(url(`/c/${REPO}/${SNAP.upgrade}`));
+  await page.goto(url(`/repos/${REPO}/scans/${SNAP.upgrade}`));
   await ready(page);
   await expect(page.locator(".commit-side")).toContainText("Code change needed");
   await expect(page.locator(".changes")).toContainText("chalk");
   await shot(page, "commit-page-upgrade");
+});
+
+test("old #/ links land on the new paths, and in-app links change the path without a reload", async ({ page }) => {
+  await page.goto(`/?${live ? "" : "mock=1"}#/c/${REPO}/${SNAP.red}`);
+  await ready(page);
+  expect(new URL(page.url()).pathname).toBe(`/repos/${REPO}/scans/${SNAP.red}`);
+  await page.evaluate(() => ((window as any).__noReload = true));
+  await page.getByRole("link", { name: "Open full map" }).click();
+  await expect.poll(() => new URL(page.url()).pathname).toBe(`/repos/${REPO}/map/${SNAP.red}`);
+  await ready(page);
+  expect(await page.evaluate(() => (window as any).__noReload)).toBe(true);
+  await page.goBack();
+  await expect.poll(() => new URL(page.url()).pathname).toBe(`/repos/${REPO}/scans/${SNAP.red}`);
 });

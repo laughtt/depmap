@@ -1,0 +1,34 @@
+# Production on a single host behind Caddy: docker compose -f compose.prod.yml up -d (with .env next to it)
+services:
+  db:
+    image: postgres:17
+    environment: { POSTGRES_USER: depmap, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: depmap }
+    volumes: [db:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U depmap"], interval: 2s, retries: 20 }
+    restart: unless-stopped
+  api:
+    image: depmap:latest
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://depmap:${DB_PASSWORD}@db:5432/depmap
+      FIXTURES_DIR: /data/http
+      PORT: "8080"
+    volumes: [cache:/data]
+    ports: ["127.0.0.1:8787:8080"]
+    depends_on: { db: { condition: service_healthy } }
+    restart: unless-stopped
+  # keeps feeding the world map from public repos' lockfiles: scripts/crawl.ts
+  crawler:
+    image: depmap:latest
+    command: ["node", "scripts/crawl.ts", "--pause", "15000"]
+    environment:
+      DATABASE_URL: postgres://depmap:${DB_PASSWORD}@db:5432/depmap
+      DATA_MODE: record
+      FIXTURES_DIR: /data/crawl
+    volumes: [cache:/data]
+    depends_on: { db: { condition: service_healthy } }
+    restart: unless-stopped
+
+volumes:
+  db:
+  cache:

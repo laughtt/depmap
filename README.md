@@ -60,12 +60,28 @@ node server/src/gitlab/mock.ts               # local GitLab on http://localhost:
 - runs real pipelines: main, three MRs (chalk 5, a debug patch, the Sept 8 replay), a human `/depmap accept`, a re-run, and a scheduled refresh;
 - checks the MR notes, labels, uploads, commit statuses and issues.
 
-Open http://localhost:8090/demo (`root` / `Dm7-qLx4-Wv9z-Kt2p`). The Duo flow can't run on CE; the pipeline reports that and continues (`flows/simulate.ts` covers the flow against the mock).
+Open http://localhost:8090/demo (`root` / the `GITLAB_ROOT_PASSWORD` you exported before `docker compose --profile gitlab up`). The Duo flow can't run on CE; the pipeline reports that and continues (`flows/simulate.ts` covers the flow against the mock).
 
 ### Every push gets a page
-`depmap:scan` sets a `depmap` commit status whose link opens `#/c/<repo>/<snapshot>` on the depmap server. The page shows:
+`depmap:scan` sets a `depmap` commit status whose link opens `/repos/<repo>/scans/<snapshot>` on the depmap server. The page shows:
 - **left:** the dependency tree upside down, the repo on top, with chains to red packages drawn in red;
 - **right:** what to do to merge (per red package: fix version or the version to stay on, plus the `/depmap accept` command; per code change: `file:line` and the fix), the changes in this push, and the current dependencies.
+
+## URLs
+Paths work like Next.js routes, and the repo name is a catch-all segment:
+- `/repos/<group>/<project>` is the map at the latest scan;
+- `/repos/<group>/<project>/map/<scan>` is the map at one scan;
+- `/repos/<group>/<project>/scans/<scan>` is that push's page (what to fix before merging);
+- `/watchers`, `/world` and `/connect` are the other pages.
+
+Old `#/repo/…` and `#/c/…` links redirect to these paths.
+
+## Hosted at https://lac.adtomic.co (one EC2 host)
+- **What runs there:** Caddy (TLS) → `127.0.0.1:8787` → the depmap container, plus Postgres in `/opt/depmap` (`deploy/compose.prod.yml`). The host's `.env` holds the secrets.
+- **Sign in:** with `REQUIRE_LOGIN=1`, every API route needs a sign-in: either a depmap account (username and password, scrypt-hashed) or GitLab. This uses OAuth with PKCE, a gitlab.com application (not confidential, scope `read_api`, redirect `https://lac.adtomic.co/api/oauth/callback`) and `OAUTH_CLIENT_ID`. The sign-in also connects your GitLab projects.
+- **CI jobs:** they pass the login with the masked CI variable `DEPMAP_TOKEN` (= `DEPMAP_CI_TOKEN` on the host).
+- **Redeploy:** `deploy/ec2-deploy.sh`. It builds the arm64 image here, ships it over SSH and runs `compose up`.
+- **What ships:** scans of private repos (`fixtures/local`) are kept out of the image by `.dockerignore`.
 
 ## Going live on GitLab.com and Cloud Run
 See `docs/GITLAB.md` (flow, triggers, CI variables) and `deploy/cloudrun-deploy.sh` (Cloud Run plus Cloud SQL in `europe-north1`).

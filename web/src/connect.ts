@@ -1,15 +1,16 @@
 import { api, type Connection, type Project } from "./api";
-import { ago, esc } from "./ui";
-import { brand, nav, stateMsg, themeButton } from "./view";
+import { ago, esc, go, paths } from "./ui";
+import { brand, session, stateMsg, themeButton, topbar } from "./view";
 
 const lock = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`;
 const tanuki = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 21.5 3 14.6l1.5-4.7L7 2.5l2.6 7.4h4.8L17 2.5l2.5 7.4 1.5 4.7z" fill="currentColor"/></svg>`;
 
 export function connectScreen(root: HTMLElement, connectionId?: string) {
   root.innerHTML = `<div class="screen plain-screen">
-    <header class="topbar">${brand}${nav("")}<div class="spacer"></div>${themeButton()}</header>
+    <header class="topbar">${topbar("repos")}</header>
     <main class="connect">
       <section class="connect-intro">
+        <nav class="crumb" aria-label="Breadcrumb"><a href="/">Repositories</a><span class="sep">/</span><b>Connect</b></nav>
         <h1>Map a repository</h1>
         <p>Depmap reads the lockfile of a GitLab project, follows every dependency to the bottom of the tree and colours each one by how risky it is right now.</p>
         <ol class="steps">
@@ -27,7 +28,7 @@ export function connectScreen(root: HTMLElement, connectionId?: string) {
     setStep(0);
     card.innerHTML = `
       <form class="connect-form" novalidate>
-        <label class="field"><span>GitLab URL</span><input name="gitlabUrl" type="url" value="http://localhost:8929" required spellcheck="false" autocomplete="url"><small class="err" hidden></small></label>
+        <label class="field"><span>GitLab URL</span><input name="gitlabUrl" type="url" value="${esc(session.gitlabUrl)}" required spellcheck="false" autocomplete="url"><small class="err" hidden></small></label>
         <a class="btn oauth" href="#">${tanuki}<span>Continue with GitLab</span></a>
         <div class="or"><span>or use a personal access token</span></div>
         <label class="field"><span>Personal access token</span>
@@ -103,7 +104,7 @@ export function connectScreen(root: HTMLElement, connectionId?: string) {
       try {
         const r = await api.importProject(c.id, +b.dataset.import!);
         setStep(2);
-        location.hash = `#/repo/${encodeURIComponent(r.repo)}/${r.snapshotId}?dig=1`;
+        go(`${paths.repo(r.repo, r.snapshotId)}?dig=1`);
       } catch (x) {
         draw();
         list.insertAdjacentHTML("beforebegin", `<div class="form-error" role="alert">${esc((x as Error).message)}</div>`);
@@ -118,4 +119,40 @@ export function connectScreen(root: HTMLElement, connectionId?: string) {
       c ? projects(c) : form();
     }).catch(form);
   } else form();
+}
+
+// shown instead of every screen when the server has login on
+export function loginScreen(root: HTMLElement) {
+  root.innerHTML = `<div class="screen plain-screen">
+    <header class="topbar"><div class="appbar">${brand}<div class="spacer"></div>${themeButton()}</div></header>
+    <main class="login">
+      <section class="connect-card">
+        <h1>Sign in to depmap</h1>
+        <p class="faint">Depmap maps every npm dependency of your GitLab projects and blocks risky ones in merge requests.</p>
+        <a class="btn oauth" href="/api/oauth/start">${tanuki}<span>Sign in with GitLab</span></a>
+        <p class="faint small">Lets depmap read the repositories your ${esc(new URL(session.gitlabUrl).host)} account can see.</p>
+        <div class="or"><span>or with a depmap account</span></div>
+        <form class="connect-form" novalidate>
+          <label class="field"><span>Username</span><input name="username" required autocomplete="username" spellcheck="false"></label>
+          <label class="field"><span>Password</span><input name="password" type="password" required autocomplete="current-password"></label>
+          <div class="form-error" role="alert" hidden></div>
+          <div class="login-actions"><button class="btn primary" type="submit" value="login">Sign in</button><button class="btn" type="submit" value="signup">Create account</button></div>
+        </form>
+      </section>
+    </main></div>`;
+  const f = root.querySelector<HTMLFormElement>("form")!, err = f.querySelector<HTMLElement>(".form-error")!;
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const mode = ((e as SubmitEvent).submitter as HTMLButtonElement).value as "login" | "signup";
+    const v = (n: string) => (f.elements.namedItem(n) as HTMLInputElement).value;
+    f.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    err.hidden = true;
+    try {
+      await api.login(mode, v("username").trim(), v("password"));
+      location.reload();
+    } catch (x) {
+      err.hidden = false; err.textContent = (x as Error).message;
+      f.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    }
+  });
 }

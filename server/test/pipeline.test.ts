@@ -5,6 +5,7 @@ import { scan } from '../src/scanner/scan.ts';
 import { refresh } from '../src/scanner/refresh.ts';
 import { readProject } from '../../scripts/seed-demo.ts';
 import { api } from '../src/api/app.ts';
+import { remedies } from '../src/advisor/remedy.ts';
 
 const snap = async (ref: string, asOf?: string) =>
   (await q('select * from snapshot where repo = $1 and ref = $2 and ($3::timestamptz is null or as_of = $3) order by id desc limit 1', ['acme/shop', ref, asOf ?? null]))[0];
@@ -67,6 +68,19 @@ describe('scan pipeline (replay fixtures)', () => {
     const ms = flipped.find((f) => f.pv === 'ms@2.1.2');
     expect(ms?.to).toBe(2);
     expect(ms?.repos.sort()).toEqual(['acme/admin', 'acme/shop']);
+  });
+
+  it('says where the code uses each red package, what to change it to, why and the sources', async () => {
+    const [chalk] = await remedies((await snap('deps-sept-8', '2025-09-08T18:00:00Z')).id, ['chalk@5.6.1']);
+    expect(chalk.usedIn[0]).toMatchObject({ file: 'src/log.js', line: 1, code: "import chalk from 'chalk';" });
+    expect(chalk.usedIn[0].calls.map((c) => c.name)).toEqual(['green', 'yellow', 'red']);
+    expect(chalk.action).toMatchObject({ kind: 'pin', version: '5.6.0', packageJson: { after: '"chalk": "5.6.0"' } });
+    expect(chalk.alternatives.map((a) => a.name)).toContain('util.styleText');
+    expect(chalk.sources.map((s) => s.url)).toContain('https://osv.dev/vulnerability/MAL-2025-46969');
+    // a refresh keeps the scan's usage, so a package flagged later still points at the code that pulls it in
+    const ms = (await remedies((await snap('main')).id)).find((r) => r.pv === 'ms@2.1.2')!;
+    expect(ms).toMatchObject({ usedBy: 'debug', action: { kind: 'upgrade', version: '2.1.3', packageJson: { before: null, after: '"overrides": { "ms": "2.1.3" }' } } });
+    expect(ms.usedIn[0]).toMatchObject({ file: 'src/server.js', code: "const debug = require('debug')('shop:server');" });
   });
 });
 

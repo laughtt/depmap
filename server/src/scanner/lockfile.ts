@@ -1,4 +1,4 @@
-import { parse as parseYaml } from 'yaml';
+import { parseAllDocuments } from 'yaml';
 
 export type DepNode = {
   name: string;
@@ -86,7 +86,8 @@ function parseNpmLock(lockText: string): DepGraph {
 
 // pnpm-lock.yaml v6-v9: "snapshots" (or "packages") keyed by name@version(peers); every workspace importer feeds the root
 function parsePnpmLock(lockText: string): DepGraph {
-  const lock = parseYaml(lockText);
+  // pnpm 11 writes a first document that pins pnpm itself (with its own importers and packages); the lockfile proper is the last one
+  const lock = parseAllDocuments(lockText).map((d: any) => d.toJS({ maxAliasCount: -1 })).filter((d) => d?.importers || d?.packages).at(-1) ?? {};
   const snaps: Record<string, any> = lock.snapshots ?? lock.packages ?? {};
   const meta: Record<string, any> = lock.packages ?? {};
   const nodes: DepNode[] = [];

@@ -7,6 +7,7 @@
 # CI/CD variables (Settings > CI/CD > Variables):
 #   DEPMAP_API_URL      the depmap server (required)
 #   DEPMAP_APP_URL      UI origin for the map image and links (default: DEPMAP_API_URL)
+#   DEPMAP_TOKEN        bearer token, when the depmap server has login on (masked variable)
 #   GITLAB_TOKEN        masked; api scope, used to post the MR note, label and upload (default: CI_JOB_TOKEN)
 #   DEPMAP_START_FLOW   "1" to start the Duo investigation flow over REST when the gate fails
 #   DEPMAP_FLOW_CONSUMER_ID   the flow's AI catalog consumer id (for the REST start)

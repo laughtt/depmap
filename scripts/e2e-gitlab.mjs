@@ -146,7 +146,7 @@ check('MR !1: gate passes', mr1.gate === 'pass');
 check('MR !1: note has Upgrade impact NEEDS_CHANGE at src/log.js:1', note1?.body.includes('#### Upgrade impact') && note1.body.includes('`NEEDS_CHANGE`') && note1.body.includes('`src/log.js:1`'));
 check('MR !1: note embeds the uploaded map PNG', /!\[depmap\]\(\/uploads\/\w+\/depmap\.png\)/.test(note1?.body ?? ''), 'needs Chrome');
 const statuses = await (await fetch(`${MOCK}/mock/statuses`)).json();
-check('every pipeline sets a depmap commit status linking to its page', statuses.length >= 3 && statuses.every((st) => st.name === 'depmap' && /\/#\/c\/acme\/(shop|admin)\/\d+$/.test(st.target_url)), `${statuses.length} statuses`);
+check('every pipeline sets a depmap commit status linking to its page', statuses.length >= 3 && statuses.every((st) => st.name === 'depmap' && /\/repos\/acme\/(shop|admin)\/scans\/\d+$/.test(st.target_url)), `${statuses.length} statuses`);
 check('MR !1: label depmap::amber', (await gl('/projects/1/merge_requests/1')).labels.includes('depmap::amber'));
 
 const mr2 = pipeline('MR !2 debug patch', shop, 'debug-4.3.7', await mrVars(2, '2025-08-22T09:00:00Z'));

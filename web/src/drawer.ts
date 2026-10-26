@@ -1,6 +1,8 @@
-import { api, type Advice, type PvDetail } from "./api";
+import { api, type Advice, type CodeFix, type PvDetail } from "./api";
+import { bindCopy, fixPanel, fixPending } from "./fix";
 import { chains, F, pvName, type Loaded } from "./graph";
 import { RISK, RISK_LABEL, ago, date, diamond, el, esc, glyph, num, reasonIcon } from "./ui";
+import { session } from "./view";
 
 export type Tab = "overview" | "paths" | "upgrade" | "decision";
 const TABS: [Tab, string][] = [["overview", "Overview"], ["paths", "Paths"], ["upgrade", "Upgrade"], ["decision", "Decision"]];
@@ -16,6 +18,7 @@ export class Drawer {
   node = -1;
   tab: Tab = "overview";
   private detail: PvDetail | null = null;
+  private fix: CodeFix | null = null;
   private seq = 0;
 
   constructor(private ctx: Ctx) {
@@ -27,6 +30,7 @@ export class Drawer {
       if (pick) return ctx.pick(+pick);
       if (t.closest(".drawer-close")) ctx.close();
     });
+    bindCopy(this.el);
   }
 
   get isOpen() { return !this.el.hidden; }
@@ -36,12 +40,15 @@ export class Drawer {
     this.tab = tab;
     this.el.hidden = false;
     this.detail = null;
+    this.fix = null;
     this.render();
     const seq = ++this.seq;
     try {
-      const d = await api.pv(this.ctx.G().names[i], this.ctx.snapshot());
+      const pv = this.ctx.G().names[i];
+      const [d, fix] = await Promise.all([api.pv(pv, this.ctx.snapshot()), api.remedy(this.ctx.snapshot(), pv).catch(() => null)]);
       if (seq !== this.seq) return;
       this.detail = d;
+      this.fix = fix;
     } catch (e) {
       if (seq !== this.seq) return;
       this.el.querySelector(".drawer-body")!.innerHTML = `<div class="state-msg error"><strong>Details didn't load.</strong><p>${esc((e as Error).message)}</p><button class="btn" data-retry>Try again</button></div>`;
@@ -49,6 +56,18 @@ export class Drawer {
       return;
     }
     this.render();
+    this.waitForAi(seq);
+  }
+
+  // the AI code change is written in the background; show it when it lands
+  private async waitForAi(seq: number) {
+    while (this.fix && fixPending(this.fix)) {
+      await new Promise((r) => setTimeout(r, 4000));
+      if (seq !== this.seq) return;
+      this.fix = await api.remedy(this.ctx.snapshot(), this.fix.pv).catch(() => null);
+      if (seq !== this.seq) return;
+      if (this.tab === "upgrade") this.render();
+    }
   }
 
   close() {
@@ -79,7 +98,7 @@ export class Drawer {
         <button class="icon-btn drawer-close" aria-label="Close details (Esc)"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
         <h2 class="pv"><span class="pv-name">${esc(at > 0 ? pv.slice(0, at) : pv)}</span><span class="pv-ver">${esc(at > 0 ? pv.slice(at) : "")}</span></h2>
         <div class="chips">${chips.map((x) => `<span class="chip">${x}</span>`).join("")}</div>
-        <nav class="tabs" role="tablist">${TABS.map(([t, l]) => `<button role="tab" data-tab="${t}" aria-selected="${t === this.tab}">${l}${t === "upgrade" && this.advice() ? `<i class="dot"></i>` : ""}</button>`).join("")}</nav>
+        <nav class="tabs" role="tablist">${TABS.map(([t, l]) => `<button role="tab" data-tab="${t}" aria-selected="${t === this.tab}">${l}${t === "upgrade" && (this.advice() || this.fix) ? `<i class="dot"></i>` : ""}</button>`).join("")}</nav>
       </header>
       <div class="drawer-body" data-testid="drawer-${this.tab}">${d ? this.body(d) : `<div class="skeleton-block"><span class="skeleton"></span><span class="skeleton w80"></span><span class="skeleton w60"></span></div>`}</div>`;
     if (d && this.tab === "decision") this.bindDecision(d);
@@ -135,8 +154,14 @@ export class Drawer {
   }
 
   private upgrade() {
-    const a = this.advice();
-    if (!a) return `<div class="state-msg"><strong>No upgrade in this snapshot.</strong><p>When a merge request bumps this package, the impact on your code shows up here: each call site, what breaks and how to fix it.</p></div>`;
+    const a = this.advice(), r = this.fix;
+    if (!a && !r) return `<div class="state-msg"><strong>Nothing to fix.</strong><p>Risky packages get a fix here: the version to move to, where your code uses it, and the exact code change.</p></div>`;
+    if (!a) return fixPanel(r!);
+    const impact = this.impact(a);
+    return r ? `${fixPanel(r)}<details class="fx-sec"><summary>This change: ${esc(a.from)} → ${esc(a.to)}<span class="fx-n">${a.items.length}</span></summary><div class="fx-body">${impact}</div></details>` : impact;
+  }
+
+  private impact(a: Advice) {
     return `<div class="adv-head">${verdict(a.verdict)}<span class="bump"><b>${esc(a.package)}</b> ${esc(a.from)} <span aria-hidden="true">→</span><span class="sr">to</span> ${esc(a.to)}</span></div>
       <p class="lede">${esc(a.summary)}</p>
       ${a.items.map((it) => `<article class="site">
@@ -150,25 +175,57 @@ export class Drawer {
   }
 
   private decision(d: PvDetail) {
-    const cur = d.decision ? `<div class="decided">${d.decision.action === "pin" ? "Pinned" : "Accepted"} by ${esc(d.decision.by)}${d.decision.expiresAt ? ` until ${date(d.decision.expiresAt)}` : ""}<p>“${esc(d.decision.reason)}”</p></div>` : "";
+    const dec = d.decision, r = this.fix, canFix = !!r?.action?.version;
+    const label = dec ? ({ fix: "Fix merge request opened", pin: "Pinned", accept: "Accepted" } as const)[dec.action] : "";
+    const cur = dec ? `<div class="decided">${label} by ${esc(dec.by)}${dec.expiresAt ? ` until ${date(dec.expiresAt)}` : ""}${
+      dec.mrUrl ? ` · <a href="${esc(dec.mrUrl)}" target="_blank" rel="noopener">Open merge request ↗</a>` : `<p>“${esc(dec.reason)}”</p>`}</div>` : "";
+    const ai = r?.ai?.status === "done" ? r.ai.fix : null, required = ai?.edits.filter((e) => e.required).length ?? 0;
     const form = `<form class="decide" novalidate>
       <fieldset class="seg"><legend>Decision</legend>
-        <label><input type="radio" name="action" value="accept" checked><span><b>Accept the risk</b>The merge gate passes for this version until the decision expires.</span></label>
+        ${canFix ? `<label><input type="radio" name="action" value="fix" checked><span><b>Fix with a merge request</b>Opens an MR on GitLab with the change below.</span></label>` : ""}
+        <label><input type="radio" name="action" value="accept"${canFix ? "" : " checked"}><span><b>Accept the risk</b>The merge gate passes for this version until the decision expires.</span></label>
         <label><input type="radio" name="action" value="pin"><span><b>Pin this version</b>Keep exactly ${esc(d.version)} and block automatic bumps.</span></label>
       </fieldset>
-      <label class="field"><span>Reason</span><textarea name="reason" rows="3" required placeholder="Why this is acceptable, for the audit log"></textarea><small class="err" hidden>Write a reason; it goes into the audit log.</small></label>
-      <div class="row2">
-        <label class="field"><span>Expires</span><select name="exp"><option value="7">In 7 days</option><option value="30" selected>In 30 days</option><option value="90">In 90 days</option><option value="">Never</option></select></label>
-        <label class="field"><span>Your name</span><input name="by" value="reviewer" required></label>
+      ${canFix ? `<div class="decide-fix" data-for="fix">
+        <ul class="fx-list"><li><code>package.json</code>: ${esc(r!.action!.packageJson?.after ?? r!.action!.version!)}</li>
+          ${required ? `<li>${required} code change${required > 1 ? "s" : ""} written by the AI</li>` : ""}
+          <li>Lockfile regenerated</li></ul>
+        <button class="btn primary" type="button" data-fix-mr>Create merge request</button>
+        <p class="hint" data-fix-msg></p>
+      </div>` : ""}
+      <div data-for="decide"${canFix ? " hidden" : ""}>
+        <label class="field"><span>Reason</span><textarea name="reason" rows="3" required placeholder="Why this is acceptable, for the audit log"></textarea><small class="err" hidden>Write a reason; it goes into the audit log.</small></label>
+        <div class="row2">
+          <label class="field"><span>Expires</span><select name="exp"><option value="7">In 7 days</option><option value="30" selected>In 30 days</option><option value="90">In 90 days</option><option value="">Never</option></select></label>
+          <label class="field"><span>Your name</span><input name="by" value="${esc(session.user?.username ?? "reviewer")}" required></label>
+        </div>
+        <button class="btn primary" type="submit">Save decision</button>
+        <p class="hint">Saved on the server with your name; the MR gate uses it.</p>
       </div>
-      <button class="btn primary" type="submit">Record decision</button>
-      <p class="hint">Decisions are stored on the server with your name and show up in the MR gate.</p>
     </form>`;
     return cur ? `${cur}<details class="decide-again"><summary>Change this decision</summary>${form}</details>` : form;
   }
 
   private bindDecision(d: PvDetail) {
     const form = this.el.querySelector<HTMLFormElement>("form.decide")!;
+    form.addEventListener("change", () => {
+      const fix = (form.elements.namedItem("action") as RadioNodeList).value === "fix";
+      form.querySelectorAll<HTMLElement>("[data-for]").forEach((x) => (x.hidden = (x.dataset.for === "fix") !== fix));
+    });
+    form.querySelector("[data-fix-mr]")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget as HTMLButtonElement, msg = form.querySelector<HTMLElement>("[data-fix-msg]")!;
+      btn.disabled = true;
+      btn.textContent = "Opening merge request…";
+      const r = await api.fixMr(this.ctx.snapshot(), d.pv);
+      if (r.ok) {
+        this.detail = { ...d, decision: { repo: this.ctx.repo, pv: d.pv, action: "fix", reason: `Fix merge request !${r.iid}`, by: session.user?.username ?? "you", mrUrl: r.mrUrl } };
+        if (this.fix) this.fix = { ...this.fix, mrUrl: r.mrUrl };
+        return this.render();
+      }
+      btn.disabled = false;
+      btn.textContent = "Create merge request";
+      msg.innerHTML = r.authorize ? `${esc(r.error)} <a href="${esc(r.authorize)}">Allow on GitLab</a>` : `Not opened: ${esc(r.error)}`;
+    });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(form), reason = String(fd.get("reason")).trim();
@@ -187,7 +244,7 @@ export class Drawer {
         this.render();
       } catch (err) {
         btn.disabled = false;
-        btn.textContent = "Record decision";
+        btn.textContent = "Save decision";
         form.querySelector(".hint")!.textContent = `Not recorded: ${(err as Error).message}`;
       }
     });

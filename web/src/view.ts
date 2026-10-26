@@ -2,8 +2,9 @@ import { api, isMock, type Delta, type Snapshot, type State } from "./api";
 import { Drawer, verdict } from "./drawer";
 import { F, loadGraph, pvName, type Loaded } from "./graph";
 import { DepMap, DYN, type Filters } from "./map";
+import { RouteMap } from "./routes";
 import { Scrubber } from "./scrubber";
-import { RISK, RISK_LABEL, diamond, esc, glyph, num, reasonIcon, reducedMotion, shortSha } from "./ui";
+import { RISK, RISK_LABEL, diamond, esc, glyph, num, reasonIcon, reducedMotion, shortSha, paths } from "./ui";
 
 export const dm = ((window as any).__depmap ??= { ready: false, nodeCount: 0, cacheHit: false, layoutMs: 0, snapshotId: 0 });
 
@@ -18,10 +19,31 @@ export function themeButton() {
   return `<button class="icon-btn theme" aria-label="Switch colour theme"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg></button>`;
 }
 
-export const brand = `<a class="brand" href="#/" aria-label="Depmap home"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="1.7" fill="currentColor"/><circle cx="15.2" cy="6.4" r="1.3" fill="var(--red)"/></svg><span>depmap</span></a>`;
+export const brand = `<a class="brand" href="/" aria-label="Depmap home"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="1.1"/><circle cx="10" cy="10" r="1.7" fill="currentColor"/><circle cx="15.2" cy="6.4" r="1.3" fill="var(--red)"/></svg><span>depmap</span></a>`;
 
-export const nav = (on: "repos" | "watchers" | "") =>
-  `<nav class="topnav"><a href="#/" ${on === "repos" ? 'aria-current="page"' : ""}>Repositories</a><a href="#/watchers" ${on === "watchers" ? 'aria-current="page"' : ""}>Watchers</a></nav>`;
+// filled from /api/me before the first route
+export const session = { loginRequired: false, gitlabUrl: "http://localhost:8929", user: null as null | { username: string; name: string; avatarUrl: string | null } };
+
+const nav = (on: string) =>
+  `<nav class="topnav" aria-label="Main">${[["repos", "/", "Repositories"], ["world", "/world", "All dependencies"], ["watchers", "/watchers", "Watchers"]]
+    .map(([k, href, label]) => `<a href="${href}" ${on === k ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+
+function userMenu() {
+  const u = session.user;
+  if (!u) return "";
+  const initials = (u.name || u.username).split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  return `<details class="user-menu"><summary aria-label="Account menu">${u.avatarUrl ? `<img src="${esc(u.avatarUrl)}" alt="">` : esc(initials)}</summary>
+    <div class="menu"><p>Signed in as <b>@${esc(u.username)}</b>${u.name ? `<span>${esc(u.name)}</span>` : ""}</p><a href="/api/logout">Sign out</a></div></details>`;
+}
+
+// the app header: brand, main nav and account on one bar, then an optional row of page context (breadcrumb, tools)
+export const topbar = (on: "repos" | "world" | "watchers" | "", sub = "", right = "") =>
+  `<div class="appbar">${brand}${nav(on)}<div class="spacer"></div>${right}${themeButton()}${userMenu()}</div>${sub ? `<div class="subbar">${sub}</div>` : ""}`;
+
+export function crumb(repo: string, tail = "") {
+  const seg = repo.split("/");
+  return `<nav class="crumb" aria-label="Breadcrumb"><a href="/">Repositories</a>${seg.slice(0, -1).map((s) => `<span class="sep">/</span><span>${esc(s)}</span>`).join("")}<span class="sep">/</span><a href="${paths.repo(repo)}">${esc(seg[seg.length - 1])}</a><span class="where">${tail}</span></nav>`;
+}
 
 export function stateMsg(title: string, body: string, action = "") {
   return `<div class="state-msg"><strong>${title}</strong><p>${body}</p>${action}</div>`;
@@ -32,12 +54,10 @@ export type MapScreen = { setSnapshot: (id: number) => Promise<void>; destroy: (
 export async function mapScreen(root: HTMLElement, repo: string, snapshotId: number | null, opts: { dig?: boolean; focus?: string | null } = {}): Promise<MapScreen> {
   dm.ready = false;
   root.innerHTML = `<div class="screen map-screen">
-    <header class="topbar">${brand}<div class="crumb"><a href="#/">Repositories</a><span class="sep">/</span><b>${esc(repo)}</b><span class="where"></span></div>
-      <div class="pills" aria-live="polite"></div><div class="spacer"></div>
+    <header class="topbar">${topbar("repos", `${crumb(repo)}<div class="pills" aria-live="polite"></div><div class="spacer"></div>
       <div class="search"><input type="search" placeholder="Find a package" aria-label="Find a package (press /)" autocomplete="off" spellcheck="false"><kbd>/</kbd><ul class="results" role="listbox" hidden></ul></div>
-      <a class="icon-btn" href="#/watchers?repo=${encodeURIComponent(repo)}" aria-label="Security watchers" title="Security watchers">${reasonIcon("security-post").svg.replace('class="ricon"', "")}</a>
-      ${(await isMock()) ? `<span class="demo-chip" title="Served by the in-browser mock, not the server">Demo data</span>` : ""}
-      ${themeButton()}</header>
+      <a class="icon-btn" href="/watchers?repo=${encodeURIComponent(repo)}" aria-label="Security watchers" title="Security watchers">${reasonIcon("security-post").svg.replace('class="ricon"', "")}</a>`,
+      (await isMock()) ? `<span class="demo-chip" title="Served by the in-browser mock, not the server">Demo data</span>` : "")}</header>
     <aside class="rail"></aside>
     <main class="stage"><div class="map-host"></div><div class="delta-panel" hidden></div><div class="tip" hidden></div><div class="dig" hidden></div>
       <div class="cam"><button class="icon-btn" data-zoom="in" aria-label="Zoom in">+</button><button class="icon-btn" data-zoom="out" aria-label="Zoom out">−</button><button class="icon-btn" data-zoom="reset" aria-label="Fit the whole map"><svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg></button></div>
@@ -51,22 +71,23 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     snaps = await api.snapshots(repo);
   } catch (e) {
     $(".screen").classList.add("failed");
-    stage.innerHTML = stateMsg("This repository could not be opened.", esc((e as Error).message), `<a class="btn" href="#/">Back to repositories</a>`);
+    stage.innerHTML = stateMsg("This repository could not be opened.", esc((e as Error).message), `<a class="btn" href="/">Back to repositories</a>`);
     return { setSnapshot: async () => {}, destroy: () => {}, repo, keys: () => false };
   }
   if (!snaps.length) {
     $(".screen").classList.add("failed");
-    stage.innerHTML = stateMsg("No snapshots yet.", "Run the baseline CI job, or import the project again, to scan its lockfile.", `<a class="btn" href="#/connect">Connect a repository</a>`);
+    stage.innerHTML = stateMsg("No snapshots yet.", "Run the baseline CI job, or import the project again, to scan its lockfile.", `<a class="btn" href="/connect">Connect a repository</a>`);
     return { setSnapshot: async () => {}, destroy: () => {}, repo, keys: () => false };
   }
   const events = await api.events(repo).catch(() => []);
   let snap = snaps.find((s) => s.id === snapshotId) ?? snaps[snaps.length - 1];
-  // the inverted tree (repo on top, dependencies hanging down) is the default; the radial map is one click away
-  let tree = (() => { try { return localStorage.getItem("depmap-layout") !== "radial"; } catch { return true; } })();
-  let G = await graphFor(snap.lockfileSha, tree);
+  // the route tree (repo box on top, dependencies as boxes below) is the default; the canvas tree and circle are one click away
+  let layout = (() => { try { return localStorage.getItem("depmap-layout") ?? "routes"; } catch { return "routes"; } })();
+  const tree = () => layout !== "radial";
+  let G = await graphFor(snap.lockfileSha, tree());
   let state: State | null = null;
   let delta: Delta | null = null;
-  let map!: DepMap;
+  let map!: DepMap | RouteMap;
   const filters: Filters = { risk: [true, true, true, true], installOnly: false, dev: true, depth: [0, G.maxDepth] };
 
   const drawer = new Drawer({
@@ -90,9 +111,10 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
   function mountMap() {
     map?.kill();
     $(".map-host").replaceChildren();
-    map = new DepMap($(".map-host"), G);
+    map = layout === "routes" ? new RouteMap($(".map-host"), G) : new DepMap($(".map-host"), G);
     map.onSelect = (i) => select(i);
-    map.onHover = (i, x, y) => tip(i, x, y);
+    if (map instanceof DepMap) map.onHover = (i, x, y) => tip(i, x, y);
+    stage.classList.toggle("routes", layout === "routes");
     Object.assign(dm, { nodeCount: G.n, cacheHit: G.cacheHit, layoutMs: G.layoutMs, map });
   }
 
@@ -107,7 +129,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
   }
 
   function where() {
-    $(".where").innerHTML = `<span class="ref">${esc(snap.ref)}</span><code>${shortSha(snap.commitSha)}</code>${snap.mrIid ? `<span class="mr">MR !${snap.mrIid}</span>` : ""}`;
+    $(".where").innerHTML = `<span class="sep">/</span><b>Scan #${snap.id}</b><span class="ref">${esc(snap.ref)}</span><code>${shortSha(snap.commitSha)}</code>${snap.mrIid ? `<span class="mr">MR !${snap.mrIid}</span>` : ""}`;
     const k = state?.counts ?? snap.counts;
     $(".pills").innerHTML = `<span class="pill total"><b>${num(k.total)}</b> packages</span>${[2, 1, 3].map((c) => `<span class="pill risk-${RISK[c]} ${k[RISK[c]] ? "" : "zero"}" title="${RISK_LABEL[c]}">${glyph(c)}<b>${num(k[RISK[c]])}</b> ${RISK[c] === "grey" ? "unknown" : RISK[c]}</span>`).join("")}`;
   }
@@ -117,7 +139,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     const order = [2, 1, 0, 3];
     $(".rail").innerHTML = `
       <section><h4>Layout</h4><div class="seg-tabs layout-toggle" role="group" aria-label="Layout">
-        <button data-layout="tree" aria-pressed="${tree}">Tree</button><button data-layout="radial" aria-pressed="${!tree}">Circle</button></div></section>
+        ${[["routes", "Routes"], ["tree", "Tree"], ["radial", "Circle"]].map(([v, t]) => `<button data-layout="${v}" aria-pressed="${layout === v}">${t}</button>`).join("")}</div></section>
       <section><h4>Show</h4>
         ${order.map((c) => `<label class="toggle risk-${RISK[c]}"><input type="checkbox" data-risk="${c}" ${filters.risk[c] ? "checked" : ""}>${glyph(c)}<span>${["Green", "Amber", "Red", "Unknown"][c]}</span><b>${num(k[RISK[c]])}</b></label>`).join("")}
         <label class="toggle"><input type="checkbox" data-f="installOnly" ${filters.installOnly ? "checked" : ""}>${diamond}<span>Install scripts only</span><b>${num(countFlag(F.install))}</b></label>
@@ -127,16 +149,24 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
         <div class="range"><input type="range" min="1" max="${G.maxDepth}" value="${filters.depth[0] || 1}" data-depth="0" aria-label="Minimum depth"><input type="range" min="1" max="${G.maxDepth}" value="${filters.depth[1]}" data-depth="1" aria-label="Maximum depth"></div>
         <div class="depth-bars">${depthCounts().slice(1).map((v, d) => `<i style="--h:${Math.max(4, (v / Math.max(...depthCounts().slice(1))) * 100)}%" class="${d + 1 >= (filters.depth[0] || 1) && d + 1 <= filters.depth[1] ? "on" : ""}" title="Depth ${d + 1}: ${num(v)} packages"></i>`).join("")}</div>
       </section>
-      <section class="legend"><h4>Reading the map</h4>
+      ${layout === "routes" ? `<section class="legend"><h4>Reading the routes</h4>
+        <ul>
+          <li><svg viewBox="0 0 24 12" width="24" height="12"><path d="M4 0v6h18" fill="none" stroke="var(--red)" stroke-width="1.4"/></svg>Red line: how a red package reaches you</li>
+          <li><span class="rt-n">${glyph(2)}2</span>Red packages further down</li>
+          <li>${diamond}Runs an install script</li>
+          <li><span class="rt-tag rt-new">+ added</span><span class="rt-tag rt-new">↑ upgraded</span>In this change</li>
+          <li>Each package shows once, under the parent that pulls it in first</li>
+        </ul>
+      </section>` : `<section class="legend"><h4>Reading the map</h4>
         <ul>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="5" cy="6" r="2" fill="currentColor"/><circle cx="16" cy="6" r="4.5" fill="currentColor"/></svg>Size: how many paths reach it</li>
-          <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="5" fill="none" stroke="currentColor"/><circle cx="12" cy="6" r="9" fill="none" stroke="currentColor" opacity=".5"/></svg>${tree ? "Rows" : "Rings"}: depth from your app</li>${tree ? `<li><svg viewBox="0 0 24 12" width="24" height="12"><path d="M3 2c0 5 18 3 18 9" fill="none" stroke="var(--red)" stroke-width="1.4"/></svg>Red line: how a red package reaches you</li>` : ""}
+          <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="5" fill="none" stroke="currentColor"/><circle cx="12" cy="6" r="9" fill="none" stroke="currentColor" opacity=".5"/></svg>${tree() ? "Rows" : "Rings"}: depth from your app</li>${tree() ? `<li><svg viewBox="0 0 24 12" width="24" height="12"><path d="M3 2c0 5 18 3 18 9" fill="none" stroke="var(--red)" stroke-width="1.4"/></svg>Red line: how a red package reaches you</li>` : ""}
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="2.5" fill="var(--red)"/><circle cx="12" cy="6" r="5" fill="none" stroke="var(--red)"/></svg>Outlined: red, act now</li>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><path d="M12 1.5 16.5 6 12 10.5 7.5 6z" fill="currentColor"/></svg>Diamond: runs an install script</li>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="2.5" fill="currentColor"/><circle cx="12" cy="6" r="5.2" fill="none" stroke="var(--accent)"/></svg>Halo: added in this change</li>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="2.5" fill="currentColor"/><circle cx="12" cy="6" r="5.2" fill="none" stroke="var(--accent)" stroke-dasharray="2 2"/></svg>Dashed halo: upgraded</li>
         </ul>
-      </section>`;
+      </section>`}`;
   }
 
   const countFlag = (f: number) => { let k = 0; for (let i = 0; i < G.n; i++) if (G.flags[i] & f) k++; return k; };
@@ -150,11 +180,11 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
 
   root.querySelector(".rail")!.addEventListener("click", async (e) => {
     const want = (e.target as HTMLElement).closest<HTMLElement>("[data-layout]")?.dataset.layout;
-    if (!want || (want === "tree") === tree) return;
-    tree = want === "tree";
+    if (!want || want === layout) return;
+    layout = want;
     try { localStorage.setItem("depmap-layout", want); } catch {}
     const selName = drawer.isOpen ? G.names[drawer.node] : null;
-    G = await graphFor(snap.lockfileSha, tree);
+    G = await graphFor(snap.lockfileSha, tree());
     mountMap();
     if (state) map.setState(state.color, state.flags);
     map.setFilters(filters);
@@ -227,7 +257,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     const selName = drawer.isOpen ? G.names[drawer.node] : null;
     if (remount) {
       const wasMax = filters.depth[1] >= G.maxDepth;
-      G = await graphFor(next.lockfileSha, tree);
+      G = await graphFor(next.lockfileSha, tree());
       if (wasMax) filters.depth[1] = G.maxDepth;
       dc = null;
       mountMap();
@@ -239,7 +269,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     dm.snapshotId = id;
     where();
     rail();
-    history.replaceState(null, "", `${location.search}#/repo/${encodeURIComponent(repo)}/${id}`);
+    history.replaceState(null, "", `${paths.repo(repo, id)}${location.search}`);
     if (scrub.compare) await loadDelta(snaps.findIndex((s) => s.id === id) > 0);
     if (selName) {
       const i = G.byName.get(selName) ?? G.names.findIndex((x) => pvName(x) === pvName(selName));
@@ -303,6 +333,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
 
   stage.querySelector(".cam")!.addEventListener("click", (e) => {
     const z = (e.target as HTMLElement).closest<HTMLElement>("[data-zoom]")?.dataset.zoom;
+    if (!(map instanceof DepMap)) return;
     const cam = map.sigma.getCamera();
     if (z === "in") cam.zoomIn({ factor: 1.6 });
     if (z === "out") cam.zoomOut({ factor: 1.6 });

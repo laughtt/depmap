@@ -1,6 +1,6 @@
 import { api, type WatchItem, type WatchSource } from "./api";
-import { ago, esc, reasonIcon } from "./ui";
-import { brand, nav, stateMsg, themeButton } from "./view";
+import { ago, esc, reasonIcon, paths } from "./ui";
+import { stateMsg, topbar } from "./view";
 
 const fresh = (iso: string | null) => !!iso && Date.now() - Date.parse(iso) < 864e5;
 // blog posts carry no structured package list; the names the server matched in their text count too
@@ -8,9 +8,9 @@ const pkgNames = (x: { packages: { name: string }[]; matched: string[] }) => [..
 
 export async function watchersScreen(root: HTMLElement, params: URLSearchParams) {
   root.innerHTML = `<div class="screen plain-screen">
-    <header class="topbar">${brand}${nav("watchers")}<div class="spacer"></div>${themeButton()}</header>
+    <header class="topbar">${topbar("watchers")}</header>
     <main class="watch">
-      <div class="watch-head">
+      <div class="watch-head page-head">
         <div><h1>Security watchers</h1>
           <p>Attacks on npm packages are usually written up by researchers, or listed as malware advisories, hours before any CVE exists. Depmap polls these sources and checks every package they name against your repositories.</p></div>
         <div class="watch-actions"><label class="field inline"><span>Match against</span><select class="repo-pick"></select></label><button class="btn poll">${reasonIcon("security-post").svg.replace('class="ricon"', 'class="glyph"')}<span>Poll now</span></button></div>
@@ -40,7 +40,7 @@ export async function watchersScreen(root: HTMLElement, params: URLSearchParams)
         <a class="item-title" href="${esc(x.url)}" target="_blank" rel="noreferrer">${esc(x.title)}</a>
         ${x.summary ? `<p>${esc(x.summary)}</p>` : ""}
         ${pkgNames(x).length ? `<div class="pkgs">${pkgNames(x).slice(0, 12).map((n) => x.matched.includes(n)
-          ? `<a class="pkg on" href="#/repo/${encodeURIComponent(repo())}?focus=${encodeURIComponent(n)}" title="Show ${esc(n)} on the map">${esc(n)}</a>`
+          ? `<a class="pkg on" href="${paths.repo(repo())}?focus=${encodeURIComponent(n)}" title="Show ${esc(n)} on the map">${esc(n)}</a>`
           : `<span class="pkg">${esc(n)}</span>`).join("")}${pkgNames(x).length > 12 ? `<span class="pkg">+${pkgNames(x).length - 12}</span>` : ""}</div>` : ""}
       </li>`).join("")}</ol>` : stateMsg(touching ? `Nothing posted touches ${esc(repo())}.` : "No posts yet.", touching ? "That is the quiet you want. Matches appear here as soon as a source names one of its packages." : "Poll the sources to fetch the latest posts.")}`;
   }

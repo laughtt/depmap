@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 // live: always fetch; record: read fixture, else fetch and save; replay: fixtures only (tests, offline demo)
 const MODE = process.env.DATA_MODE ?? 'record';
-const DIR = process.env.FIXTURES_DIR ?? new URL('../../../fixtures/http/', import.meta.url).pathname;
-// reads also fall back to the git-ignored scans of private repos, so a refresh keeps their recorded advisories
-const READ_DIRS = [...new Set([DIR, new URL('../../../fixtures/local/', import.meta.url).pathname])];
+const BUNDLED = new URL('../../../fixtures/http/', import.meta.url).pathname;
+const DIR = process.env.FIXTURES_DIR ?? BUNDLED;
+// reads also fall back to the bundled fixtures (when DIR is a writable cache) and to the git-ignored scans of private repos and the crawler's cache
+const READ_DIRS = [...new Set([DIR, BUNDLED, ...['local', 'crawl'].map((d) => new URL(`../../../fixtures/${d}/`, import.meta.url).pathname)])];
 
 async function readFixture(name: string) {
   for (const dir of READ_DIRS) {

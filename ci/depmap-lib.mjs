@@ -18,7 +18,12 @@ export async function http(url, init = {}) {
 }
 
 const json = (method, body) => (body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-export const depmap = (path, body) => http(`${API}${path}`, json(body === undefined ? 'GET' : 'POST', body));
+// a depmap server with login on lets CI in with this shared token
+export const auth = env.DEPMAP_TOKEN ? { authorization: `Bearer ${env.DEPMAP_TOKEN}` } : {};
+export const depmap = (path, body) => {
+  const init = json(body === undefined ? 'GET' : 'POST', body);
+  return http(`${API}${path}`, { ...init, headers: { ...init.headers, ...auth } });
+};
 
 export function gitlab(path, { method = 'GET', body, form } = {}) {
   const init = form ? { method, body: form } : json(method, body);

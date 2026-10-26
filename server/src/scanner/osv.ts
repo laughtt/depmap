@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import semver from 'semver';
 import { cachedJson, mapLimit } from './http.ts';
 
 export type Advisory = {
@@ -77,4 +78,48 @@ export async function advisoriesFor(pvs: { name: string; version: string }[], as
   }
   for (const [pv, list] of out) out.set(pv, list.filter((a) => !a.published || a.published <= asOf));
   return out;
+}
+
+export type AdvisoryDetail = {
+  id: string; cwe: string[]; affected: string[]; fixedIn: { version: string; bump: string } | null;
+  sections: { title: string; blocks: { text?: string; code?: string }[] }[]; fixLinks: string[];
+};
+
+// GitHub-reviewed records write details as "### Impact / Patches / Workarounds / PoC" markdown; keep prose and fenced code apart
+function sections(md: string) {
+  const out: AdvisoryDetail['sections'] = [];
+  md = md.replace(/^(-{3,}|_?-=.*=-_?)\s*$/gm, '');
+  for (const [k, part] of md.split(/^#{2,4}\s+/m).entries()) {
+    const [title, ...rest] = k === 0 ? ['Details', part] : part.split('\n');
+    const blocks = rest.join('\n').split(/^```[\w-]*\n?/m).map((s, i) => (i % 2 ? { code: s.replace(/\n$/, '') } : { text: s.trim() })).filter((b) => b.code ?? b.text);
+    if (/^references$/i.test(title.trim()) || !blocks.length) continue;
+    // malware records put their cleanup advice under a "Source: ghsa-malware (hash)" heading
+    out.push({ title: /^source:/i.test(title.trim()) ? 'What to do' : title.trim(), blocks });
+  }
+  return out;
+}
+
+export async function advisoryDetail(id: string, name: string, version: string): Promise<AdvisoryDetail | null> {
+  const v = (await localFeed()).find((x) => x.id === id) ?? (await cachedJson(`https://api.osv.dev/v1/vulns/${id}`).catch(() => null));
+  if (!v) return null;
+  const ranges = (v.affected ?? []).filter((a: any) => a.package?.name === name).flatMap((a: any) => a.ranges ?? []);
+  const affected: string[] = [], fixes: string[] = [];
+  for (const r of ranges) {
+    let from = '0';
+    for (const e of r.events) {
+      if (e.introduced) from = e.introduced;
+      const to = e.fixed ?? e.last_affected;
+      if (!to) continue;
+      affected.push(`>=${from} ${e.fixed ? '<' : '<='}${to}`);
+      if (e.fixed && semver.valid(e.fixed) && semver.gt(e.fixed, version) && semver.gte(version, semver.valid(from) ?? '0.0.0')) fixes.push(e.fixed);
+    }
+    if (r.events.every((e: any) => !e.fixed && !e.last_affected)) affected.push(`>=${from}`);
+  }
+  const fix = fixes.sort(semver.compare)[0];
+  return {
+    id, cwe: v.database_specific?.cwe_ids ?? [], affected,
+    fixedIn: fix ? { version: fix, bump: semver.diff(version, fix) ?? 'patch' } : null,
+    sections: sections(v.details ?? ''),
+    fixLinks: (v.references ?? []).map((r: any) => r.url).filter((u: string) => /\/(commit|pull|releases\/tag)\//.test(u)),
+  };
 }

@@ -1,6 +1,6 @@
 // The complete pipeline on a real GitLab CE + runner in Docker (compose profile `gitlab`), against the depmap API on :8787.
 // Idempotent: reuses GitLab, the runner and the projects; each run closes the old MRs and opens fresh ones.
-// Usage: node scripts/local-gitlab.mjs        GitLab: http://localhost:8090 (root / Dm7-qLx4-Wv9z-Kt2p)
+// Usage: node scripts/local-gitlab.mjs        GitLab: http://localhost:8090 (root / $GITLAB_ROOT_PASSWORD)
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -165,7 +165,7 @@ check('chalk 5 MR: pipeline passes', a.run.status === 'success');
 check('chalk 5 MR: one report note by depmap-bot with NEEDS_CHANGE at src/log.js:1', noteA?.author.username === 'depmap-bot' && noteA.body.includes('`NEEDS_CHANGE`') && noteA.body.includes('`src/log.js:1`'));
 check('chalk 5 MR: the note embeds the map PNG uploaded to GitLab', /!\[depmap\]\(\/uploads\/\w+\/depmap\.png\)/.test(noteA?.body ?? ''));
 const [status] = await gl(`/projects/${shop.id}/repository/commits/${a.mr.sha}/statuses?name=depmap`);
-check('chalk 5 MR: a depmap commit status links the commit to its page', status?.status === 'success' && /\/#\/c\/demo\/shop\/\d+$/.test(status.target_url ?? ''), status?.target_url);
+check('chalk 5 MR: a depmap commit status links the commit to its page', status?.status === 'success' && /\/repos\/demo\/shop\/scans\/\d+$/.test(status.target_url ?? ''), status?.target_url);
 check('chalk 5 MR: label depmap::amber', (await gl(`/projects/${shop.id}/merge_requests/${a.mr.iid}`)).labels.includes('depmap::amber'));
 
 console.log('\n== MR debug patch');
@@ -206,5 +206,5 @@ check('refresh: only depmap:refresh runs on the schedule, and it passes', r.stat
 check('refresh: security::watch issue for ms@2.1.2 in demo/shop and demo/admin', (await issues(shop)).includes('depmap: ms@2.1.2 turned red') && (await issues(admin)).includes('depmap: ms@2.1.2 turned red'), (await issues(shop)).join('; '));
 
 const failed = checks.filter((c) => !c.ok);
-console.log(`\n${checks.length - failed.length}/${checks.length} checks passed · GitLab ${GL}/demo (root / Dm7-qLx4-Wv9z-Kt2p) · map ${API}`);
+console.log(`\n${checks.length - failed.length}/${checks.length} checks passed · GitLab ${GL}/demo (root / $GITLAB_ROOT_PASSWORD) · map ${API}`);
 process.exit(failed.length ? 1 : 0);

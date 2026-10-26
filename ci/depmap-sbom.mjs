@@ -1,9 +1,9 @@
 // depmap:scan (sbom): fetch the snapshot's CycloneDX SBOM for GitLab's dependency list. Skips when the API has none.
 import { writeFileSync } from 'node:fs';
-import { API, readResult } from './depmap-lib.mjs';
+import { API, auth, readResult } from './depmap-lib.mjs';
 
 const { snapshotId } = readResult();
-const res = await fetch(`${API}/api/snapshots/${snapshotId}/sbom.cdx.json`);
+const res = await fetch(`${API}/api/snapshots/${snapshotId}/sbom.cdx.json`, { headers: auth });
 if (!res.ok || !res.headers.get('content-type')?.includes('json')) {
   console.log(`depmap sbom: skipped (${res.status})`);
   process.exit(0);

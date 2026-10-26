@@ -10,7 +10,7 @@ test("the map renders the expected node count", async ({ page, request }) => {
   await page.goto(mapUrl());
   await ready(page);
   expect(await dm<number>(page, "dm.nodeCount")).toBe(expected);
-  await expect(page.locator(".map-stage canvas").first()).toBeVisible();
+  await expect(page.locator(".rt-root")).toBeVisible();
   await expect(page.locator(".pill.total")).toContainText("packages");
   await shot(page, "map");
 });
@@ -69,10 +69,29 @@ test("a second page load reuses the cached layout", async ({ page }) => {
   expect(await dm<boolean>(page, "dm.cacheHit")).toBe(true);
 });
 
-test("the map opens as an inverted tree and switches to the circle and back", async ({ page }) => {
+test("the routes view opens the red paths and a click opens the drawer", async ({ page }) => {
   await page.goto(mapUrl(SNAP.red));
   await ready(page);
-  expect(await dm<boolean>(page, "dm.map.G.tree")).toBe(true);
+  await expect(page.locator(".rt-root")).toContainText("packages");
+  const reds = await dm<number[]>(page, "dm.reds()");
+  await expect(page.locator(".rt-box.risk-red")).toHaveCount(reds.length);
+  const red = page.locator(".rt-box.risk-red").first();
+  const name = await red.locator(".rt-name").textContent();
+  await red.click();
+  await expect(page.locator(".drawer .pv-name")).toHaveText(name!);
+  await expect(page.locator(".drawer .drawer-state")).toContainText("Red");
+  const tog = await page.locator('.rt-tog[aria-expanded="false"]').first().getAttribute("data-tog");
+  await page.locator(`[data-tog="${tog}"]`).click();
+  await expect(page.locator(`[data-tog="${tog}"]`)).toHaveAttribute("aria-expanded", "true");
+  await shot(page, "routes");
+});
+
+test("the map opens as routes and switches to the tree, the circle and back", async ({ page }) => {
+  await page.goto(mapUrl(SNAP.red));
+  await ready(page);
+  await expect(page.locator(".rt-root")).toBeVisible();
+  await page.getByRole("button", { name: "Tree" }).click();
+  await page.waitForFunction(() => (window as any).__depmap.map.G?.tree === true && !!document.querySelector(".map-stage canvas"));
   await page.getByRole("button", { name: "Circle" }).click();
   await page.waitForFunction(() => (window as any).__depmap.map.G.tree === false);
   expect(await dm<number>(page, "dm.map.color.filter((c) => c === 2).length")).toBeGreaterThan(0);
@@ -80,4 +99,6 @@ test("the map opens as an inverted tree and switches to the circle and back", as
   await page.getByRole("button", { name: "Tree" }).click();
   await page.waitForFunction(() => (window as any).__depmap.map.G.tree === true);
   await shot(page, "map-tree");
+  await page.getByRole("button", { name: "Routes" }).click();
+  await expect(page.locator(".rt-root")).toBeVisible();
 });

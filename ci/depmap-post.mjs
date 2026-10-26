@@ -19,6 +19,8 @@ const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const level = !r.gate.pass ? 'red' : r.counts.red > 0 || r.advice.some((a) => ['NEEDS_CHANGE', 'REVIEW'].includes(a.verdict)) ? 'amber' : 'green';
 const c = r.counts;
 const undecided = r.reds.filter((x) => x.undecided);
+// AI code changes are written in the background after the scan; give them a moment before posting
+const aiOf = new Map(r.reds.length ? (await depmap(`/api/snapshots/${r.snapshotId}/remedies?wait=90`).catch(() => [])).map((x) => [x.pv, x.ai]) : []);
 const out = [
   MARKER,
   `### depmap · ${r.gate.pass ? 'Gate passed' : `Gate failed: ${undecided.length} red package${undecided.length === 1 ? '' : 's'} need a decision`}`,
@@ -41,6 +43,19 @@ if (r.reds.length) {
     for (const reason of red.reasons) out.push(`  - ${cell(reason.text)} ([${reason.code}](${reason.url}))`);
     const fp = red.fingerprint;
     if (fp) out.push(`  - Looks like **${fp.title}**: ${fp.matched} of ${fp.total} signals. ${cell(fp.summary)} ([background](${fp.url}))`);
+    const rm = red.remedy;
+    if (!rm) continue;
+    const through = rm.usedBy !== rm.name ? ` through \`${rm.usedBy}\`` : '';
+    for (const s of rm.usedIn.slice(0, 3)) out.push(`  - Used${through} in \`${s.file}:${s.line}\`: \`${cell(s.code)}\`${s.calls.length ? ` (also line${s.calls.length > 1 ? 's' : ''} ${s.calls.slice(0, 4).map((c) => c.line).join(', ')})` : ''}`);
+    if (rm.action) out.push(`  - **Fix:** ${cell(rm.action.text)}${rm.action.packageJson ? ` In \`package.json\`: \`${cell(rm.action.packageJson.after)}\`` : ''}`);
+    if (rm.alternatives.length) out.push(`  - Or replace \`${rm.alternatives[0].for}\` with ${rm.alternatives.slice(0, 3).map((a) => (a.url ? `[${a.name}](${a.url})` : a.name)).join(', ')}`);
+    if (rm.sources.length) out.push(`  - Sources: ${rm.sources.slice(0, 6).map((s) => `[${cell(s.label)}](${s.url})`).join(' · ')}`);
+    const ai = aiOf.get(red.pv)?.fix;
+    if (ai) {
+      out.push(`  - **AI code change** (${ai.model}, ${ai.confidence} confidence): ${ai.needsCodeChange ? '' : 'no code change is required. '}${cell(ai.summary)}`);
+      for (const e of ai.edits) out.push('', `    \`${e.file}:${e.startLine}\` · ${e.required ? 'required' : 'optional'}: ${cell(e.why)}`, '', '    ```diff', ...e.before.split('\n').map((l) => `    -${l}`), ...e.after.split('\n').map((l) => `    +${l}`), '    ```');
+      if (ai.sources.length) out.push(`    Read: ${ai.sources.slice(0, 4).map((s) => `[${cell(s.label)}](${s.url})`).join(' · ')}`);
+    }
   }
 }
 

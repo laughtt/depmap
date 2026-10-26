@@ -1,0 +1,16 @@
+# scans of private repos never leave this machine
+fixtures/local
+# the crawler's HTTP cache is rebuilt on each host
+fixtures/crawl
+**/node_modules
+web/dist
+web/src/wasm
+server/wasm
+crates/*/target
+target
+test-results
+playwright-report
+.gitlab-ci-local
+.env*
+*.log
+.git

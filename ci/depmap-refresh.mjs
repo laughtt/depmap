@@ -35,7 +35,7 @@ for (const f of reds) {
       ...(d.fingerprint ? [`- Looks like **${d.fingerprint.title}**: ${d.fingerprint.matched} of ${d.fingerprint.total} signals ([background](${d.fingerprint.url}))`] : []),
       '', '**Suggested fix**', '',
       fix ? `Move \`${name}\` to **${fix}** (an \`overrides\` entry in package.json works for transitive packages), or record a decision in the next MR.` : 'No fixed version is published yet: pin the previous version or record a time-boxed decision.',
-      '', `Also affected: ${f.repos.map((x) => `\`${x}\``).join(', ')} · [map](${env.DEPMAP_APP_URL ?? env.DEPMAP_API_URL ?? 'http://localhost:8787'}/#/repo/${repo}/${latest.get(repo)})`,
+      '', `Also affected: ${f.repos.map((x) => `\`${x}\``).join(', ')} · [map](${env.DEPMAP_APP_URL ?? env.DEPMAP_API_URL ?? 'http://localhost:8787'}/repos/${repo}/map/${latest.get(repo)})`,
       '', '<sub>Opened by the depmap scheduled refresh · 0 GitLab credits</sub>',
     ].join('\n');
     const issue = await gitlab(`/projects/${project.id}/issues`, { method: 'POST', body: { title, description, labels: 'security::watch' } });

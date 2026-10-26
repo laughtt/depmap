@@ -10,6 +10,8 @@ import { matchFingerprint, type FingerprintMatch } from './fingerprints.ts';
 import { adviseUpgrade, type Advice } from '../advisor/advise.ts';
 import { mentionsFor } from '../watchers/watchers.ts';
 import { startMeter } from './sci.ts';
+import { collectUsage, remedies } from '../advisor/remedy.ts';
+import { queueAiFixes } from '../advisor/aifix.ts';
 
 export type ScanInput = {
   repo: string;
@@ -22,6 +24,7 @@ export type ScanInput = {
   packageJson?: string;
   sources?: { path: string; content: string }[];
   asOf?: string;
+  webUrl?: string;
 };
 
 export type NodeState = { color: number; flags: number; reasons: any[]; fingerprint: FingerprintMatch | null; advisories: Advisory[] };
@@ -97,6 +100,7 @@ export function countColors(states: NodeState[], g: DepGraph) {
 }
 
 async function findBase(input: ScanInput) {
+  if (input.kind === 'crawl') return null;
   const rows = input.baseSha
     ? await q('select * from snapshot where repo = $1 and commit_sha = $2 order by id desc limit 1', [input.repo, input.baseSha])
     : await q('select * from snapshot where repo = $1 and ($2::text is null or ref = $2) order by id desc limit 1', [input.repo, input.ref ?? null]);
@@ -109,6 +113,12 @@ export async function scan(input: ScanInput) {
   const lockfileSha = createHash('sha256').update(input.lockfile).digest('hex');
   const g = parseLockfile(input.lockfile);
   await q('insert into graph (lockfile_sha, bin, pvs, lockfile) values ($1,$2,$3,$4) on conflict do nothing', [lockfileSha, encodeGraph(g), g.nodes.map((n) => n.pv), input.lockfile]);
+  const edges = g.edges.filter(([a]) => !g.nodes[a].root);
+  await q('insert into pv_edge (parent, child) select * from unnest($1::text[], $2::text[]) on conflict do nothing', [edges.map(([a]) => g.nodes[a].pv), edges.map(([, b]) => g.nodes[b].pv)]);
+  const deps = g.nodes.filter((n) => !n.root);
+  await q(`insert into pv_use (pv, runtime, direct, install) select * from unnest($1::text[], $2::bool[], $3::bool[], $4::bool[])
+    on conflict (pv) do update set runtime = pv_use.runtime or excluded.runtime, direct = pv_use.direct or excluded.direct, install = pv_use.install or excluded.install`,
+  [deps.map((n) => n.pv), deps.map((n) => !n.dev), deps.map((n) => n.direct), deps.map((n) => n.installScript)]);
   const states = await assessGraph(g, input.repo, asOf);
 
   const base = await findBase(input);
@@ -155,11 +165,13 @@ export async function scan(input: ScanInput) {
   const counts = countColors(states, g);
   const metrics = meter(counts.total);
 
+  const usage = input.sources?.length ? collectUsage(g, input.sources, input.packageJson, input.lockfile) : null;
   const [snap] = await q(
-    `insert into snapshot (repo, ref, commit_sha, kind, mr_iid, base_snapshot_id, lockfile_sha, as_of, color, flags, counts, gate, delta, metrics)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
+    `insert into snapshot (repo, ref, commit_sha, kind, mr_iid, base_snapshot_id, lockfile_sha, as_of, color, flags, counts, gate, delta, metrics, usage, web_url)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning id`,
     [input.repo, input.ref ?? null, input.commitSha ?? null, input.kind ?? (input.mrIid ? 'mr' : 'push'), input.mrIid ?? null, base?.id ?? null, lockfileSha, asOf,
-      Buffer.from(states.map((s) => s.color)), Buffer.from(states.map((s) => s.flags)), counts, gate, delta, metrics],
+      Buffer.from(states.map((s) => s.color)), Buffer.from(states.map((s) => s.flags)), counts, gate, delta, metrics,
+      usage, input.webUrl ?? null],
   );
   await saveDetails(snap.id, g, states);
   for (const a of advice) await q('insert into advice (snapshot_id, package, data) values ($1,$2,$3)', [snap.id, a.package, a]);
@@ -167,7 +179,12 @@ export async function scan(input: ScanInput) {
   for (const pv of undecidedReds) if (!delta || delta.colorChanged.some((c: any) => c.pv === pv) || delta.added.includes(pv) || delta.upgraded.some((u: any) => `${u.name}@${u.to}` === pv)) {
     await q('insert into event (kind, repo, pv, snapshot_id, payload) values ($1,$2,$3,$4,$5)', ['red', input.repo, pv, snap.id, { reasons: states[g.nodes.findIndex((n) => n.pv === pv)].reasons.map((r) => r.code) }]);
   }
-  const reds = g.nodes.flatMap((n, i) => (states[i].color === COLOR.red ? [{ pv: n.pv, reasons: states[i].reasons, fingerprint: states[i].fingerprint }] : []));
+  const used = new Set(Object.values(usage?.sites ?? {}).flat().map((s) => s.file));
+  for (const f of (input.sources ?? []).filter((x) => used.has(x.path))) await q('insert into snapshot_file (snapshot_id, path, content) values ($1,$2,$3) on conflict do nothing', [snap.id, f.path, f.content]);
+  const all = await remedies(snap.id);
+  await queueAiFixes(snap.id, all);
+  const fixes = new Map(all.map((r) => [r.pv, r]));
+  const reds = g.nodes.flatMap((n, i) => (states[i].color === COLOR.red ? [{ pv: n.pv, reasons: states[i].reasons, fingerprint: states[i].fingerprint, remedy: fixes.get(n.pv) ?? null }] : []));
   return { snapshotId: snap.id, lockfileSha, asOf, counts, delta, advice, gate, metrics, reds };
 }
 

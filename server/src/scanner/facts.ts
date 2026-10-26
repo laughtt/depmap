@@ -13,7 +13,7 @@ function trim(doc: any): Packument {
   for (const [v, m] of Object.entries<any>(doc.versions ?? {})) {
     versions[v] = {
       publisher: m._npmUser?.name,
-      maintainers: (m.maintainers ?? []).map((x: any) => x.name ?? String(x)),
+      maintainers: (Array.isArray(m.maintainers) ? m.maintainers : []).map((x: any) => x.name ?? String(x)),
       scripts: INSTALL_SCRIPTS.filter((s) => m.scripts?.[s]),
       provenance: !!m.dist?.attestations?.provenance,
       deprecated: m.deprecated || undefined,

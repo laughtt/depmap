@@ -3,11 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- paint the saved theme's background before any CSS or JS loads, so there is no white flash -->
+    <script>try { document.documentElement.dataset.theme = localStorage.getItem("depmap-theme") || "dark"; } catch {}</script>
+    <style>html { background: #06080d; color-scheme: dark; } html[data-theme="light"] { background: #f3f5f8; color-scheme: light; }</style>
     <title>Depmap</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%239db4ff' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%239db4ff' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%239db4ff'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   </head>
   <body>
     <div id="app"></div>

@@ -9,3 +9,4 @@ server/wasm
 .gitlab-ci-local
 *.log
 fixtures/local
+fixtures/crawl

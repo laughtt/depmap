@@ -31,8 +31,11 @@ COPY server server
 COPY fixtures fixtures
 COPY demo demo
 COPY scripts scripts
+COPY ci ci
 COPY --from=wasm /out/server server/wasm
 COPY --from=web /app/web/dist web/dist
+# the scanner's HTTP cache when FIXTURES_DIR=/data/http (a volume)
+RUN mkdir -p /data/http && chown -R node /data
 USER node
 EXPOSE 8080
 CMD ["node", "server/src/api/main.ts"]

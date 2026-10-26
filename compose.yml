@@ -6,6 +6,8 @@ services:
       POSTGRES_PASSWORD: depmap
       POSTGRES_DB: depmap
     ports: ["5433:5432"]
+    # named, so recreating the container keeps the data
+    volumes: [db-data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U depmap"]
       interval: 2s
@@ -35,7 +37,7 @@ services:
     environment:
       GITLAB_OMNIBUS_CONFIG: |
         external_url 'http://localhost:8090'
-        gitlab_rails['initial_root_password'] = 'Dm7-qLx4-Wv9z-Kt2p'
+        gitlab_rails['initial_root_password'] = '${GITLAB_ROOT_PASSWORD:?set GITLAB_ROOT_PASSWORD to a strong password}'
         puma['worker_processes'] = 0
         sidekiq['concurrency'] = 5
         prometheus_monitoring['enable'] = false
@@ -49,6 +51,7 @@ services:
     profiles: [gitlab]
 
 volumes:
+  db-data:
   gitlab-config:
   gitlab-data:
   gitlab-logs:

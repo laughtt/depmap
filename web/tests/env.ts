@@ -4,8 +4,12 @@ import path from "node:path";
 export const live = process.env.DEPMAP_MODE === "live";
 export const REPO = live ? "acme/shop" : "demo/shop";
 export const SNAP = live ? { first: 1, upgrade: 2, red: 8 } : { first: 1, upgrade: 4, red: 4 };
-export const url = (hash: string, extra = "") => `/${live ? (extra ? `?${extra}` : "") : `?mock=1${extra ? `&${extra}` : ""}`}#${hash}`;
-export const mapUrl = (snap?: number) => url(`/repo/${encodeURIComponent(REPO)}${snap ? `/${snap}` : ""}`);
+export const url = (path: string, extra = "") => {
+  const [p, q = ""] = path.split("?");
+  const qs = [q, live ? "" : "mock=1", extra].filter(Boolean).join("&");
+  return `${p}${qs ? `?${qs}` : ""}`;
+};
+export const mapUrl = (snap?: number) => url(`/repos/${REPO}${snap ? `/map/${snap}` : ""}`);
 
 export async function ready(page: Page, timeout = 30_000) {
   await page.waitForFunction(() => (window as any).__depmap?.ready === true, null, { timeout });

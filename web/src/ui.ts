@@ -16,6 +16,17 @@ export const glyph = (c: number, cls = "") =>
 
 export const diamond = `<svg class="glyph" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M6 1.2 10.8 6 6 10.8 1.2 6z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
 
+const repoPath = (repo: string) => repo.split("/").map(encodeURIComponent).join("/");
+// Next.js-style paths; the repo name is a catch-all segment (group/subgroup/project)
+export const paths = {
+  repo: (repo: string, snap?: number | null) => `/repos/${repoPath(repo)}${snap ? `/map/${snap}` : ""}`,
+  scan: (repo: string, snap: number) => `/repos/${repoPath(repo)}/scans/${snap}`,
+};
+export function go(url: string) {
+  history.pushState(null, "", url);
+  dispatchEvent(new PopStateEvent("popstate"));
+}
+
 export const num = (n: number) => n.toLocaleString("en-US");
 export const shortSha = (s: string) => s.slice(0, 7);
 

@@ -43,6 +43,6 @@ if (import.meta.main) {
   for (const row of await q('select pv, color, reasons, fingerprint from snapshot_pv where snapshot_id = $1 and color in (1, 2) order by color desc, pv limit 15', [r.snapshotId])) {
     console.log(`  ${row.color === 2 ? 'RED  ' : 'amber'} ${row.pv}: ${row.reasons.map((x: any) => x.text).join(' | ').slice(0, 220)}${row.fingerprint ? ` [looks like ${row.fingerprint.title}]` : ''}`);
   }
-  console.log(`  map: http://localhost:8787/#/repo/${encodeURIComponent(repo)}/${r.snapshotId}`);
+  console.log(`  map: http://localhost:8787/repos/${repo}/map/${r.snapshotId}`);
   await pool.end();
 }
