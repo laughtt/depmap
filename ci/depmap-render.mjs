@@ -18,7 +18,8 @@ if (!browser) skip('Chrome is unavailable');
 
 try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 700 } });
-  await page.goto(`${APP}/#/render?repo=${encodeURIComponent(r.repo)}&snapshot=${r.snapshotId}&delta=1`);
+  // DEPMAP_RENDER_URL: the UI as this job's browser reaches it, when that differs from the public DEPMAP_APP_URL
+  await page.goto(`${(env.DEPMAP_RENDER_URL ?? APP).replace(/\/$/, '')}/#/render?repo=${encodeURIComponent(r.repo)}&snapshot=${r.snapshotId}&delta=1`);
   await page.waitForFunction(() => window.__depmap?.ready === true, null, { timeout: 30_000 });
   const error = await page.evaluate(() => window.__depmap.error);
   if (error) throw new Error(error);

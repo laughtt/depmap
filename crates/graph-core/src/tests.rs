@@ -197,3 +197,22 @@ fn perf_layout_50k() {
     assert_eq!(xy.len(), 100_000);
     assert!(ms < 500.0);
 }
+
+#[test]
+fn tree_layout_hangs_down_from_the_root() {
+    let mut spec = synth(1000, 20, 2400, 5);
+    spec.names.push("orphan@1.0.0".into());
+    spec.depth.push(UNREACHABLE);
+    let g = spec.graph();
+    let xy = g.layout_tree(2000.0, 100.0);
+    let pp = g.primary_parents();
+    assert_eq!((xy[0], xy[1]), (0.0, 0.0));
+    for v in 1..g.n() {
+        assert!(xy[2 * v].abs() <= 1000.0, "node {v} outside the width");
+        if spec.depth[v] == UNREACHABLE {
+            assert!(xy[2 * v + 1] < -(*spec.depth.iter().filter(|&&d| d != UNREACHABLE).max().unwrap() as f32) * 100.0);
+        } else {
+            assert!(xy[2 * v + 1] < xy[2 * pp[v] as usize + 1], "node {v} is not below its parent");
+        }
+    }
+}

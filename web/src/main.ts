@@ -1,4 +1,5 @@
 import "./styles.css";
+import { commitScreen } from "./commit";
 import { connectScreen } from "./connect";
 import { homeScreen } from "./home";
 import { watchersScreen } from "./watchers";
@@ -42,6 +43,10 @@ async function route() {
   screen?.destroy();
   screen = null;
   dm.map = null;
+  if (seg[0] === "c" && seg.length > 1) {
+    const last = seg[seg.length - 1], snap = /^\d+$/.test(last) && seg.length > 2 ? +last : null;
+    return commitScreen(root, decodeURIComponent((snap === null ? seg.slice(1) : seg.slice(1, -1)).join("/")), snap);
+  }
   if (seg[0] === "connect") return connectScreen(root);
   if (seg[0] === "connected") return connectScreen(root, seg[1]);
   if (seg[0] === "render") return renderScreen(root, params);

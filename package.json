@@ -16,7 +16,9 @@
     "test:rust": "cd crates/graph-core && cargo test --quiet",
     "test:server": "pnpm --filter server test",
     "test:web": "pnpm --filter web test:e2e",
-    "test:all": "node scripts/test-all.mjs"
+    "test:all": "node scripts/test-all.mjs",
+    "test:gitlab": "node scripts/e2e-gitlab.mjs",
+    "test:gitlab-real": "node scripts/local-gitlab.mjs"
   },
   "devDependencies": {
     "gitlab-ci-local": "^4.76.1"

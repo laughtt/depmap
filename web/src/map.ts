@@ -1,7 +1,7 @@
 import Graph from "graphology";
 import Sigma from "sigma";
 import { sdfCircle, sdfDiamond } from "sigma/rendering";
-import { F, RADIUS, pvName, type Loaded } from "./graph";
+import { F, RADIUS, TREE_H, TREE_W, pvName, type Loaded } from "./graph";
 import { cssVar, reducedMotion } from "./ui";
 
 export const DYN = { vuln: 1, malicious: 2, deprecated: 4, decided: 8, changed: 16, recent: 32, fingerprint: 64 };
@@ -87,7 +87,8 @@ export class DepMap {
       },
       settings: { stagePadding: 24, minCameraRatio: 0.04, maxCameraRatio: 2.5, zoomDuration: 180, labelDensity: 1, hideEdgesOnMove: false },
     });
-    this.sigma.setCustomBBox({ x: [-lim, lim], y: [-lim, lim] });
+    const level = TREE_H / (G.maxDepth + 1);
+    this.sigma.setCustomBBox(G.tree ? { x: [-TREE_W / 2 - 40, TREE_W / 2 + 40], y: [-(G.maxDepth + 1.4) * level, level * 0.7] } : { x: [-lim, lim], y: [-lim, lim] });
     this.sigma.on("afterRender", () => this.draw());
     this.sigma.on("enterNode", ({ node, event }) => this.setHover(+node, event.x, event.y));
     this.sigma.on("leaveNode", () => this.setHover(-1, 0, 0));
@@ -110,6 +111,7 @@ export class DepMap {
   private labelled(i: number) {
     if (this.G.depth[i] > this.reveal && i) return false;
     if (i === 0) return true;
+    if (this.G.tree && this.G.flags[i] & F.direct && i !== this.hover && i !== this.sel) return false;
     if (this.overlay) return this.color[i] === 2 && this.mask[i] === 1;
     if (i === this.hover || i === this.sel) return true;
     if (this.focusSet) return this.focusSet[i] === 1;
@@ -254,6 +256,7 @@ export class DepMap {
 
   private drawBg() {
     const ctx = this.fit(this.bg), G = this.G, p = this.pal, W = this.el.clientWidth, H = this.el.clientHeight;
+    if (G.tree) return this.drawTree(ctx, W);
     const o = this.sigma.graphToViewport({ x: 0, y: 0 });
     const rad = (r: number) => Math.hypot(this.sigma.graphToViewport({ x: r, y: 0 }).x - o.x, this.sigma.graphToViewport({ x: r, y: 0 }).y - o.y);
     const ringR = (d: number) => rad((d * RADIUS) / G.maxDepth);
@@ -313,6 +316,59 @@ export class DepMap {
       ctx.textAlign = flip ? "right" : "left";
       ctx.fillStyle = c === 2 ? p.fx[2] : p.muted;
       ctx.fillText(label, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // inverted tree: one row per depth, curved parent → child links, the chains that reach a red package drawn in red
+  private drawTree(ctx: CanvasRenderingContext2D, W: number) {
+    const G = this.G, p = this.pal, level = TREE_H / (G.maxDepth + 1);
+    const top = Math.min(this.reveal, G.maxDepth);
+    ctx.font = "500 10px Instrument Sans, system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.strokeStyle = p.line;
+    ctx.fillStyle = p.muted;
+    ctx.setLineDash([2, 4]);
+    for (let d = 1; d <= top; d++) {
+      const y = this.sigma.graphToViewport({ x: 0, y: -d * level }).y;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      ctx.fillText(d === 1 ? "direct" : `depth ${d}`, 8, y - 9);
+    }
+    ctx.setLineDash([]);
+    if (G.n > 20000) return;
+    const hot = new Uint8Array(G.n);
+    for (let i = 1; i < G.n; i++) {
+      if (this.color[i] !== 2 || !this.mask[i]) continue;
+      for (let c = i; c > 0 && c < G.n && !hot[c]; c = G.primary[c]) hot[c] = 1;
+    }
+    for (const pass of [0, 1]) {
+      ctx.strokeStyle = pass ? p.fx[2] : p.line2;
+      ctx.globalAlpha = pass ? 0.85 : 0.5;
+      ctx.lineWidth = pass ? 1.6 : 1;
+      ctx.beginPath();
+      for (let i = 1; i < G.n; i++) {
+        const par = G.primary[i];
+        if (par >= G.n || hot[i] !== pass || G.depth[i] > this.reveal) continue;
+        const a = this.viewport(par), b = this.viewport(i), m = (a.y + b.y) / 2;
+        ctx.moveTo(a.x, a.y);
+        ctx.bezierCurveTo(a.x, m, b.x, m, b.x, b.y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const xs = this.directs.map((i) => this.viewport(i).x).sort((a, b) => a - b);
+    const crowded = xs.some((x, k) => k && x - xs[k - 1] < 11);
+    ctx.textAlign = "left";
+    for (const w of this.directs) {
+      const c = this.color[w];
+      if (crowded && c === 0) continue;
+      const v = this.viewport(w), label = pvName(G.names[w]);
+      ctx.save();
+      ctx.translate(v.x + 3, v.y - this.sigma.scaleSize(this.sizeOf(w)) - 5);
+      ctx.rotate(-Math.PI / 4);
+      ctx.font = `${c === 2 ? 600 : 500} 11px Instrument Sans, system-ui, sans-serif`;
+      ctx.fillStyle = c === 2 ? p.fx[2] : c === 1 ? p.fx[1] : p.muted;
+      ctx.fillText(label.length > 24 ? label.slice(0, 23) + "…" : label, 0, 0);
       ctx.restore();
     }
   }

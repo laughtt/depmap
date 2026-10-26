@@ -53,5 +53,19 @@ node server/src/gitlab/mock.ts               # local GitLab on http://localhost:
 - Playwright UI tests (mock and live);
 - the GitLab end-to-end MR scenarios.
 
+### The complete pipeline on a real GitLab (local)
+`pnpm test:gitlab-real` boots **GitLab CE 19.5 and a GitLab Runner in Docker** (compose profile `gitlab`; the first boot takes about 5 minutes and about 4 GB of memory). Then it:
+- creates group `demo` with projects `shop` and `admin`, plus a `depmap-bot` user that posts the reports;
+- pushes the demo repos, which include the template remotely from the depmap server (exactly as any project would);
+- runs real pipelines: main, three MRs (chalk 5, a debug patch, the Sept 8 replay), a human `/depmap accept`, a re-run, and a scheduled refresh;
+- checks the MR notes, labels, uploads, commit statuses and issues.
+
+Open http://localhost:8090/demo (`root` / `Dm7-qLx4-Wv9z-Kt2p`). The Duo flow can't run on CE; the pipeline reports that and continues (`flows/simulate.ts` covers the flow against the mock).
+
+### Every push gets a page
+`depmap:scan` sets a `depmap` commit status whose link opens `#/c/<repo>/<snapshot>` on the depmap server. The page shows:
+- **left:** the dependency tree upside down, the repo on top, with chains to red packages drawn in red;
+- **right:** what to do to merge (per red package: fix version or the version to stay on, plus the `/depmap accept` command; per code change: `file:line` and the fix), the changes in this push, and the current dependencies.
+
 ## Going live on GitLab.com and Cloud Run
 See `docs/GITLAB.md` (flow, triggers, CI variables) and `deploy/cloudrun-deploy.sh` (Cloud Run plus Cloud SQL in `europe-north1`).

@@ -2,6 +2,7 @@ import init, { Graph } from "./wasm/graph_core.js";
 
 export const LAYOUT_VERSION = 1;
 export const RADIUS = 1000;
+export const TREE_W = 2000, TREE_H = 1500;
 export const F = { direct: 1, dev: 2, install: 4, optional: 8, root: 128 } as const;
 
 export type Bin = { n: number; e: number; depth: Uint8Array; flags: Uint8Array; pathCount: Uint32Array; edgeFrom: Uint32Array; edgeTo: Uint32Array; names: string[] };
@@ -20,7 +21,7 @@ export function parseBin(bytes: Uint8Array): Bin {
 }
 
 export type Loaded = Bin & {
-  g: Graph; pos: Float32Array; cacheHit: boolean; layoutMs: number; maxDepth: number;
+  g: Graph; pos: Float32Array; cacheHit: boolean; layoutMs: number; maxDepth: number; tree: boolean;
   primary: Uint32Array; byName: Map<string, number>;
 };
 
@@ -49,29 +50,29 @@ async function cache<T>(mode: "get" | "put", key: string, value?: T): Promise<T 
 
 let ready: Promise<unknown> | null = null;
 
-export async function loadGraph(bytes: Uint8Array, lockfileSha: string): Promise<Loaded> {
+export async function loadGraph(bytes: Uint8Array, lockfileSha: string, tree = false): Promise<Loaded> {
   ready ??= Promise.all([init(), ...['500 11px "JetBrains Mono"', '500 11px "Instrument Sans"'].map((f) => document.fonts.load(f).catch(() => []))]);
   await ready;
   const bin = parseBin(bytes);
   const g = Graph.fromBytes(bytes);
-  const key = `${lockfileSha}:${LAYOUT_VERSION}`;
+  let maxDepth = 1;
+  for (const d of bin.depth) if (d !== 255 && d > maxDepth) maxDepth = d;
+  const key = `${lockfileSha}:${LAYOUT_VERSION}${tree ? ":tree" : ""}`;
   let pos = await cache<Float32Array>("get", key);
   const cacheHit = !!pos && pos.length === bin.n * 2;
   let layoutMs = 0;
   if (!cacheHit) {
     const t = performance.now();
-    pos = g.layout(RADIUS);
+    pos = tree ? g.layoutTree(TREE_W, TREE_H / (maxDepth + 1)) : g.layout(RADIUS);
     layoutMs = Math.round(performance.now() - t);
     console.info(`[depmap] layout ${bin.n} nodes in ${layoutMs} ms`);
     await cache("put", key, pos);
   } else console.info(`[depmap] layout cache hit for ${bin.n} nodes`);
-  let maxDepth = 1;
-  for (const d of bin.depth) if (d !== 255 && d > maxDepth) maxDepth = d;
   const byName = new Map<string, number>();
   bin.names.forEach((s, i) => byName.set(s, i));
   const w = g as Graph & { flags?: () => Uint8Array; pathCounts?: () => Uint32Array };
   return {
-    ...bin, g, pos: pos!, cacheHit, layoutMs, maxDepth, byName,
+    ...bin, g, pos: pos!, cacheHit, layoutMs, maxDepth, byName, tree,
     flags: w.flags?.() ?? bin.flags, pathCount: w.pathCounts?.() ?? bin.pathCount,
     edgeFrom: g.edgeFrom(), edgeTo: g.edgeTo(), primary: g.primaryParents(),
   };

@@ -26,7 +26,7 @@ const out = [
   `**${c.total}** packages · **${c.red}** red · **${c.amber}** amber · **${c.green}** green${c.grey ? ` · ${c.grey} unknown` : ''} · \`depmap::${level}\``,
 ];
 if (image) out.push('', image);
-out.push('', `[Open the live map](${r.urls.map}) · snapshot ${r.snapshotId}${r.asOf ? ` · risk as of ${r.asOf}` : ''}`);
+out.push('', `**[Open this push's page](${r.urls.page ?? r.urls.map})** (tree, what to do to merge, changes) · [full map](${r.urls.map}) · snapshot ${r.snapshotId}${r.asOf ? ` · risk as of ${r.asOf}` : ''}`);
 
 if (r.changed.length) {
   out.push('', '#### Changed packages', '', '| Package | Change | Risk |', '|---|---|---|');
@@ -86,9 +86,12 @@ if (!r.gate.pass && env.DEPMAP_START_FLOW === '1') {
     `Pipeline ${r.pipelineId}, job ${r.jobId} (depmap:scan) printed the receipt between BEGIN_DEPMAP_JSON and END_DEPMAP_JSON at the end of its log.`,
     `Read it with get_job_logs, then explain each undecided red package (${r.gate.undecidedReds.join(', ')}) in one MR note.`,
   ].join('\n');
-  const wf = await gitlab('/ai/duo_workflows/workflows', {
+  // GitLab without the Duo Agent Platform (CE, no add-on) answers 403/404: the note and the gate already did their job
+  await gitlab('/ai/duo_workflows/workflows', {
     method: 'POST',
     body: { project_id: PROJECT, goal, ai_catalog_item_consumer_id: env.DEPMAP_FLOW_CONSUMER_ID ? Number(env.DEPMAP_FLOW_CONSUMER_ID) : undefined, start_workflow: true },
-  });
-  console.log(`depmap post: started Duo flow, workflow ${wf.id} (${wf.status})`);
+  }).then(
+    (wf) => console.log(`depmap post: started Duo flow, workflow ${wf.id} (${wf.status})`),
+    (e) => console.log(`depmap post: Duo flow not started (${e.status ?? e.message}); is the Duo Agent Platform enabled for this project?`),
+  );
 }

@@ -408,6 +408,9 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
 .ev.acc { color: var(--accent); background: var(--accent-soft); }
 .ev.warn { color: var(--amber); background: var(--amber-soft); }
 .tick-time { color: var(--faint); font-size: 10.5px; margin-top: -4px; white-space: nowrap; }
+/* many snapshots: only the current one keeps its label, so ticks don't cover each other (the title still names each) */
+.track.dense .tick:not(.on) .tick-label, .track.dense .tick:not(.on) .tick-time { display: none; }
+.track.dense .tick.on { z-index: 1; }
 .tick.on .tick-time { color: var(--muted); }
 .mr.refresh { background: var(--hover); color: var(--muted); }
 .gate-fail { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; color: var(--red); font-weight: 600; }
@@ -552,4 +555,50 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
   .watch-grid { grid-template-columns: 1fr; }
   .sources { position: static; }
   .topnav { display: none; }
+}
+
+/* per-push page: inverted tree on the left, what to do + changes + dependencies on the right */
+.commit-screen { display: grid; grid-template: 52px 1fr / minmax(0, 1fr) 420px; height: 100vh; background: var(--ink); }
+.commit-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.ch-title { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; }
+.ch-title code { font: 12px var(--mono); color: var(--muted); }
+.muted { color: var(--muted); }
+.gate { padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.gate.ok { color: var(--green); background: var(--green-soft); }
+.gate.no { color: var(--red); background: var(--red-soft); }
+.btn-link { margin-left: auto; color: var(--accent); font-size: 12.5px; text-decoration: none; }
+.btn-link:hover { text-decoration: underline; }
+.commit-tree { position: relative; overflow: hidden; }
+.commit-tree.map-host { position: relative; inset: auto; }
+.commit-side { overflow-y: auto; padding: 14px; border-left: 1px solid var(--line); background: var(--panel); }
+.cs-card { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); }
+.cs-card + .cs-card { margin-top: 12px; }
+.cs-card h3 { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.cs-card h3 .muted { font-size: 12px; font-weight: 500; }
+.cs-card p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.cs-card p b, .cs-card p code { color: var(--text); }
+.cs-card code { font: 11.5px var(--mono); }
+.cs-card a { color: var(--accent); }
+.todo { margin: 0; padding: 0 0 0 18px; }
+.todo > li + li { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.todo .fp { color: var(--red); }
+.cmd { display: block; margin-top: 6px; padding: 7px 9px; border-radius: 5px; background: var(--ink); color: var(--text); user-select: all; overflow-x: auto; white-space: nowrap; }
+.pv-link { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pv-link:hover code { text-decoration: underline; }
+.pv-link code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.changes, .deps { margin: 0; padding: 0; list-style: none; font-size: 12.5px; }
+.changes li, .deps li { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.changes li .verdict, .deps li .muted { margin-left: auto; }
+.chg { width: 14px; font: 600 13px var(--mono); text-align: center; color: var(--muted); }
+.chg.add { color: var(--green); }
+.chg.rm { color: var(--red); }
+.chg.up { color: var(--accent); }
+.deps { max-height: 46vh; overflow-y: auto; }
+.deps .ver { font: 11.5px var(--mono); color: var(--muted); }
+.deps .tag { padding: 0 5px; border: 1px solid var(--line-2); border-radius: 3px; font-size: 10.5px; color: var(--muted); }
+.cs-filter { width: 100%; margin: 10px 0 6px; padding: 7px 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--ink); color: var(--text); font: 12.5px var(--sans); }
+@media (max-width: 900px) {
+  .commit-screen { grid-template: 52px 60vh auto / 1fr; height: auto; }
+  .commit-side { border-left: 0; border-top: 1px solid var(--line); }
+  .ch-title .muted, .btn-link { display: none; }
 }

@@ -219,6 +219,50 @@ impl Graph {
     }
 
     pub fn layout(&self, radius: f32) -> Vec<f32> {
+        let (mid, jitter, outer) = self.fan(0.0);
+        let gap = radius as f64 / self.max_depth() as f64;
+        let mut out = vec![0f32; 2 * self.n()];
+        for v in 1..self.n() {
+            let theta = mid[v] * TAU;
+            let r = self.depth[v] as f64 * gap + jitter[v] as f64 * 0.18 * gap;
+            out[2 * v] = (r * theta.cos()) as f32;
+            out[2 * v + 1] = (r * theta.sin()) as f32;
+        }
+        let r = radius as f64 * 1.08;
+        for (k, &v) in outer.iter().enumerate() {
+            let theta = TAU * k as f64 / outer.len() as f64;
+            out[2 * v as usize] = (r * theta.cos()) as f32;
+            out[2 * v as usize + 1] = (r * theta.sin()) as f32;
+        }
+        out
+    }
+
+    /// The same order as `layout`, drawn as an inverted tree: the root on top, one row per depth going down (y < 0).
+    #[wasm_bindgen(js_name = layoutTree)]
+    pub fn layout_tree(&self, width: f32, level: f32) -> Vec<f32> {
+        // small subtrees get a minimum share, so a direct dependency with no children still has room for its label
+        let (mid, jitter, outer) = self.fan(4.0);
+        let (w, h) = (width as f64, level as f64);
+        let mut out = vec![0f32; 2 * self.n()];
+        for v in 1..self.n() {
+            out[2 * v] = ((mid[v] - 0.5) * w) as f32;
+            out[2 * v + 1] = (-(self.depth[v] as f64 + jitter[v] as f64 * 0.22) * h) as f32;
+        }
+        let y = -(self.max_depth() as f64 + 1.0) * h;
+        for (k, &v) in outer.iter().enumerate() {
+            out[2 * v as usize] = (((k as f64 + 0.5) / outer.len() as f64 - 0.5) * w) as f32;
+            out[2 * v as usize + 1] = y as f32;
+        }
+        out
+    }
+
+    fn max_depth(&self) -> u8 {
+        self.depth.iter().filter(|&&d| d != UNREACHABLE).max().copied().unwrap_or(0).max(1)
+    }
+
+    /// Each tree node's slot as a fraction of the full turn (a subtree's span is proportional to its size + `pad`),
+    /// a small per-sibling depth jitter, and the nodes the tree doesn't reach.
+    fn fan(&self, pad: f64) -> (Vec<f64>, Vec<i8>, Vec<u32>) {
         let n = self.n();
         let pp = self.primary_parents();
         let parents: Vec<u32> = pp.iter().copied().filter(|&p| p != NONE).collect();
@@ -247,39 +291,30 @@ impl Graph {
             size[pp[v as usize] as usize] += size[v as usize];
         }
 
-        let max_depth = self.depth.iter().filter(|&&d| d != UNREACHABLE).max().copied().unwrap_or(0).max(1);
-        let gap = radius as f64 / max_depth as f64;
         let mut start = vec![0f64; n];
         let mut span = vec![0f64; n];
-        span[0] = TAU;
+        span[0] = 1.0;
+        let mut mid = vec![0.5f64; n];
+        let mut jitter = vec![0i8; n];
         let mut in_tree = vec![false; n];
-        let mut out = vec![0f32; 2 * n];
         for &v in &order {
             let v = v as usize;
             in_tree[v] = true;
-            let unit = span[v] / (size[v] - 1).max(1) as f64;
+            let kids = children(v);
+            let unit = span[v] / ((size[v] - 1) as f64 + pad * kids.len() as f64).max(1.0);
             let mut a = start[v];
-            for (k, &c) in children(v).iter().enumerate() {
+            for (k, &c) in kids.iter().enumerate() {
                 let c = c as usize;
                 start[c] = a;
-                span[c] = unit * size[c] as f64;
+                span[c] = unit * (size[c] as f64 + pad);
                 a += span[c];
-                let theta = start[c] + span[c] / 2.0;
-                let r = self.depth[c] as f64 * gap + ((k % 3) as f64 - 1.0) * 0.18 * gap;
-                out[2 * c] = (r * theta.cos()) as f32;
-                out[2 * c + 1] = (r * theta.sin()) as f32;
+                mid[c] = start[c] + span[c] / 2.0;
+                jitter[c] = (k % 3) as i8 - 1;
             }
         }
-
         let mut outer: Vec<u32> = (0..n as u32).filter(|&v| !in_tree[v as usize]).collect();
         outer.sort_unstable_by(|&a, &b| self.by_name(a, b));
-        let r = radius as f64 * 1.08;
-        for (k, &v) in outer.iter().enumerate() {
-            let theta = TAU * k as f64 / outer.len() as f64;
-            out[2 * v as usize] = (r * theta.cos()) as f32;
-            out[2 * v as usize + 1] = (r * theta.sin()) as f32;
-        }
-        out
+        (mid, jitter, outer)
     }
 
     #[wasm_bindgen(js_name = pathsToRoot)]

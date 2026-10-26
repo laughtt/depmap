@@ -8,9 +8,10 @@ import { RISK, RISK_LABEL, diamond, esc, glyph, num, reasonIcon, reducedMotion, 
 export const dm = ((window as any).__depmap ??= { ready: false, nodeCount: 0, cacheHit: false, layoutMs: 0, snapshotId: 0 });
 
 const graphs = new Map<string, Promise<Loaded>>();
-const graphFor = (sha: string) => {
-  if (!graphs.has(sha)) graphs.set(sha, api.graphBytes(sha).then((b) => loadGraph(b, sha)));
-  return graphs.get(sha)!;
+export const graphFor = (sha: string, tree = false) => {
+  const key = `${sha}${tree ? ":tree" : ""}`;
+  if (!graphs.has(key)) graphs.set(key, api.graphBytes(sha).then((b) => loadGraph(b, sha, tree)));
+  return graphs.get(key)!;
 };
 
 export function themeButton() {

@@ -43,7 +43,7 @@ export class Scrubber {
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${this.playing ? `<path d="M5 3h2v10H5zM9 3h2v10H9z" fill="currentColor"/>` : `<path d="M5 3l8 5-8 5z" fill="currentColor"/>`}</svg>
         <span>${this.playing ? "Pause" : "Replay"}</span>
       </button>
-      <div class="track" role="group" aria-label="Snapshots; use the left and right arrow keys to step">
+      <div class="track ${this.snaps.length > 10 ? "dense" : ""}" role="group" aria-label="Snapshots; use the left and right arrow keys to step">
         <div class="rail-line"></div>
         <div class="rail-fill" style="width:${this.x(Math.max(0, cur))}%"></div>
         ${this.markers()}

@@ -245,7 +245,10 @@ export async function mockCall(method: string, path: string, body: any): Promise
   }
   if ((m = p.match(/^\/api\/repos\/(.+)\/snapshots$/))) {
     const repo = decodeURIComponent(m[1]), S = await scenario(repo);
-    return snapshots(S).map((s, k) => ({ ...s, id: snapId(repo, k), gate: { pass: !s.counts.red || k < 2, undecidedReds: [] } }));
+    return snapshots(S).map((s, k) => {
+      const pass = !s.counts.red || k < 2;
+      return { ...s, id: snapId(repo, k), gate: { pass, undecidedReds: pass ? [] : S.bin.names.filter((_, i) => i > 0 && S.snaps[k].color[i] === 2) } };
+    });
   }
   if ((m = p.match(/^\/api\/snapshots\/(\d+)\/(state|delta)$/))) {
     const { S, k, id } = await bySnapshot(+m[1]);

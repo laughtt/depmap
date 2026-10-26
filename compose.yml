@@ -26,3 +26,30 @@ services:
     ports: ["8080:8080"]
     depends_on: { db: { condition: service_healthy } }
     profiles: [full]
+  # a real GitLab CE + runner for the full pipeline locally: node scripts/local-gitlab.mjs
+  gitlab:
+    image: gitlab/gitlab-ce:19.5.1-ce.0
+    hostname: gitlab
+    shm_size: 256m
+    ports: ["8090:8090"]
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:8090'
+        gitlab_rails['initial_root_password'] = 'Dm7-qLx4-Wv9z-Kt2p'
+        puma['worker_processes'] = 0
+        sidekiq['concurrency'] = 5
+        prometheus_monitoring['enable'] = false
+        gitlab_kas['enable'] = false
+        registry['enable'] = false
+    volumes: [gitlab-config:/etc/gitlab, gitlab-data:/var/opt/gitlab, gitlab-logs:/var/log/gitlab]
+    profiles: [gitlab]
+  gitlab-runner:
+    image: gitlab/gitlab-runner:v19.5.1
+    volumes: [/var/run/docker.sock:/var/run/docker.sock, gitlab-runner:/etc/gitlab-runner]
+    profiles: [gitlab]
+
+volumes:
+  gitlab-config:
+  gitlab-data:
+  gitlab-logs:
+  gitlab-runner:

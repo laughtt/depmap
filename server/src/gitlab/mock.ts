@@ -67,6 +67,7 @@ function fresh() {
     uploads: new Map<string, { type: string; bytes: Uint8Array }>(),
     jobs: new Map<number, any>(),
     workflows: [] as any[],
+    statuses: [] as any[],
     codes: new Map<string, { challenge: string; redirectUri: string; scope: string }>(),
     oauthTokens: new Set<string>(),
     calls: [] as { method: string; path: string; status: number; at: string }[],
@@ -230,6 +231,12 @@ app.post(`${P}/uploads`, async (c) => {
   const alt = name.replace(/\.[^.]+$/, '');
   return c.json({ id: nextId(), alt, url: `/uploads/${secret}/${name}`, full_path: `/-/project/${p.id}/uploads/${secret}/${name}`, markdown: `![${alt}](/uploads/${secret}/${name})` }, 201);
 });
+app.post(`${P}/statuses/:sha`, async (c) => {
+  const status = { id: nextId(), sha: c.req.param('sha'), ...(await c.req.json()), created_at: new Date().toISOString() };
+  S.statuses.push(status);
+  return c.json(status, 201);
+});
+app.get('/mock/statuses', (c) => c.json(S.statuses));
 const serveUpload = (c: Context) => {
   const u = S.uploads.get(`${c.req.param('secret')}/${c.req.param('name')}`);
   return u ? c.body(u.bytes as Uint8Array<ArrayBuffer>, 200, { 'content-type': u.type }) : c.text('Not found', 404);

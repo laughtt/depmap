@@ -21,6 +21,6 @@ log('');
 log('To proceed, change the dependency or record a decision as an MR comment, then re-run the pipeline:');
 for (const pv of r.gate.undecidedReds) log(`  /depmap accept ${pv} 1d: <why the risk is acceptable>`);
 log('  /depmap pin <pkg@previous-version>: <reason>');
-log(`Map: ${r.urls.map}`);
+log(`Page: ${r.urls.page ?? r.urls.map}`);
 await registerJob(trace(), 'failed');
 process.exit(1);

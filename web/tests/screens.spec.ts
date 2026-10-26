@@ -76,3 +76,24 @@ test("search finds a package and opens it", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page.locator(".drawer .pv-name")).toHaveText("chalk");
 });
+
+test("the per-push page hangs the tree under the repo and says what to do to merge", async ({ page }) => {
+  await page.goto(url(`/c/${REPO}/${SNAP.red}`));
+  await ready(page);
+  await expect(page.locator(".ch-title")).toContainText(REPO);
+  await expect(page.locator(".gate")).toContainText("Blocked");
+  await expect(page.locator(".todo-red").first()).toContainText("/depmap accept");
+  const tree = await dm<{ tree: boolean; rootY: number; below: boolean }>(page,
+    "({ tree: dm.map.G.tree, rootY: dm.map.G.pos[1], below: [...Array(dm.map.G.n).keys()].slice(1).every((i) => dm.map.G.primary[i] >= dm.map.G.n || dm.map.G.pos[2 * i + 1] < dm.map.G.pos[2 * dm.map.G.primary[i] + 1]) })");
+  expect(tree).toEqual({ tree: true, rootY: 0, below: true });
+  const directs = await dm<number>(page, "dm.map.directs.length");
+  await expect(page.locator(".deps li")).toHaveCount(directs);
+  await page.locator(".deps li .pv-link").first().click();
+  expect(await dm<number>(page, "dm.map.sel")).toBeGreaterThan(0);
+  await shot(page, "commit-page");
+  await page.goto(url(`/c/${REPO}/${SNAP.upgrade}`));
+  await ready(page);
+  await expect(page.locator(".commit-side")).toContainText("Code change needed");
+  await expect(page.locator(".changes")).toContainText("chalk");
+  await shot(page, "commit-page-upgrade");
+});

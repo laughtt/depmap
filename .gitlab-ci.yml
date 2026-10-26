@@ -74,13 +74,6 @@ test:server:
   script:
     - pnpm --filter server test
 
-depmap:refresh:
-  extends: .depmap
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" && $DEPMAP_API_URL
-  script:
-    - node ci/depmap-refresh.mjs
-
 package:image:
   stage: package
   image: docker:27

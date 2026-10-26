@@ -78,7 +78,7 @@ const receipt = {
   changed,
   advice: result.advice.map((a) => ({ package: a.package, from: a.from, to: a.to, direct: a.direct, verdict: a.verdict, summary: a.summary, items: a.items, paths: a.paths })),
   reds,
-  urls: { map: `${APP}/#/repo/${repo}/${id}`, delta: `${API}/api/snapshots/${id}/delta` },
+  urls: { page: `${APP}/#/c/${repo}/${id}`, map: `${APP}/#/repo/${repo}/${id}`, delta: `${API}/api/snapshots/${id}/delta` },
 };
 let block = JSON.stringify(receipt);
 if (block.length > 95_000) {
@@ -92,5 +92,14 @@ const c = result.counts;
 log(`depmap: ${repo}@${ref} snapshot ${id}: ${c.total} packages, ${c.red} red, ${c.amber} amber, ${c.green} green, ${c.grey} grey`);
 for (const a of receipt.advice) log(`depmap: upgrade ${a.package} ${a.from} → ${a.to}: ${a.verdict}`);
 log(`depmap: gate ${result.gate.pass ? 'PASS' : `FAIL (${result.gate.undecidedReds.join(', ')})`}`);
+log(`depmap: page ${receipt.urls.page}`);
+// every pipeline publishes its page: a `depmap` commit status links the commit (and this pipeline) to it
+if (GITLAB && env.CI_COMMIT_SHA && env.GITLAB_TOKEN) {
+  await gitlab(`/projects/${PROJECT}/statuses/${env.CI_COMMIT_SHA}`, {
+    method: 'POST',
+    body: { state: result.gate.pass ? 'success' : 'failed', name: 'depmap', target_url: receipt.urls.page, pipeline_id: env.CI_PIPELINE_ID ? Number(env.CI_PIPELINE_ID) : undefined,
+      description: `${c.total} packages · ${c.red} red · ${c.amber} amber${result.gate.pass ? '' : ' · blocked'}` },
+  }).catch((e) => log(`depmap: commit status not set (${e.status ?? e.message})`));
+}
 log(`BEGIN_DEPMAP_JSON\n${block}\nEND_DEPMAP_JSON`);
 await registerJob(trace());
