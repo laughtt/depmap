@@ -113,7 +113,7 @@ All nine stages are covered, with a file or page for each in `docs/STAGES.md`:
 - monitor: the refresh, the watchers and commit statuses;
 - govern: decisions with an expiry, plus an audit log.
 
-We're entering Path A Supervised (the agents investigate and open fixes; people merge or accept the risk), Most Stages Covered, Most Environmentally Impactful and Most Creative. For the Google Cloud bonus there's `deploy/cloudrun-deploy.sh` (Cloud Run and Cloud SQL in `europe-north1`); the live instance itself runs on EC2.
+We're entering Path A Supervised (the agents investigate and open fixes; people merge or accept the risk), Most Stages Covered, Most Environmentally Impactful and Most Creative. For the Google Cloud bonus there's `deploy/cloudrun-deploy.sh` (Cloud Run and Cloud SQL in `europe-north1`).
 
 ## Sustainability
 
@@ -147,7 +147,7 @@ web/                   the UI
 ci/                    CI scripts and the includeable template
 flows/                 the Duo flow and its simulator
 scripts/               demo, seeding, local scans, crawler, local GitLab, Pages export, test runner
-deploy/                Dockerfile, EC2 compose and deploy script, Cloud Run script
+deploy/                Dockerfile, single-host compose and deploy script, Cloud Run script
 ```
 
 ## Running it
@@ -203,10 +203,6 @@ The scan sends the file along, so the gate, the UI and the scheduled refresh all
 `pnpm test:gitlab-real` starts GitLab CE 19.5 and a runner in Docker. It pushes the demo repos, which pull in the template exactly as any project would, and runs real pipelines: main, three MRs (chalk 5, a debug patch, the 8 September replay), an accept, a re-run and a scheduled refresh. It then checks the notes, labels, uploads, commit statuses and issues.
 
 Pushing a `v*` tag runs the release pipeline. It runs the tests, pushes the image to the Container Registry, checks depmap's own lockfile with depmap, and creates a GitLab Release with a changelog and the SBOM attached.
-
-## Hosting
-
-https://lac.adtomic.co runs on a single EC2 host: Caddy for TLS in front of the depmap container and Postgres (`deploy/compose.prod.yml`). Redeploy with `deploy/ec2-deploy.sh`. With `REQUIRE_LOGIN=1`, every API call needs a depmap account or a GitLab sign-in (OAuth with PKCE, scope `read_api`), and CI jobs use the masked `DEPMAP_TOKEN`. Scans of private repos stay on the machine that made them; `.dockerignore` keeps `fixtures/local` out of the image.
 
 ## License
 
