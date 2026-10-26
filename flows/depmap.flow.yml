@@ -62,8 +62,6 @@ components:
         as: "receipt"
       - from: "context:goal"
         as: "goal"
-      - from: "context:project_id"
-        as: "project_id"
     toolset:
       - "create_merge_request_note"
     ui_log_events:
@@ -122,7 +120,7 @@ prompts:
            not direct: add the override from remedy.action.packageJson.after ("overrides" for npm, "pnpm.overrides" for pnpm).
            Keep the file's formatting and every other line.
         3. Read the merge request notes with gitlab_api_get /projects/{projectId}/merge_requests/{mrIid}/notes and find the one
-           containing "<!-- depmap:report -->". If it shows an "AI code change" marked required for this package, read each named
+           whose body contains the text "depmap:report". If it shows an "AI code change" marked required for this package, read each named
            file with get_repository_file and apply exactly those diff lines. Do not apply optional changes; list them in the description.
         4. create_commit on a new branch "depmap/fix-<name>-<version>" (replace @ and / in the name with -) started from ref, with every changed file.
         5. create_merge_request from that branch into ref. Title: "Fix <pv>: <kind> <name> to <version>".
