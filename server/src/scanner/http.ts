@@ -5,6 +5,17 @@ import { join } from 'node:path';
 // live: always fetch; record: read fixture, else fetch and save; replay: fixtures only (tests, offline demo)
 const MODE = process.env.DATA_MODE ?? 'record';
 const DIR = process.env.FIXTURES_DIR ?? new URL('../../../fixtures/http/', import.meta.url).pathname;
+// reads also fall back to the git-ignored scans of private repos, so a refresh keeps their recorded advisories
+const READ_DIRS = [...new Set([DIR, new URL('../../../fixtures/local/', import.meta.url).pathname])];
+
+async function readFixture(name: string) {
+  for (const dir of READ_DIRS) {
+    try {
+      return JSON.parse(await readFile(join(dir, name), 'utf8')).data;
+    } catch {}
+  }
+  throw new Error('no fixture');
+}
 
 type Opts = { method?: string; body?: unknown; transform?: (json: any) => any };
 
@@ -17,7 +28,7 @@ export async function cachedJson(url: string, opts: Opts = {}): Promise<any> {
   const file = join(DIR, `${key}.json`);
   if (MODE !== 'live') {
     try {
-      const hit = JSON.parse(await readFile(file, 'utf8')).data;
+      const hit = await readFixture(`${key}.json`);
       stats.cacheHits++;
       return hit;
     } catch {
@@ -38,10 +49,11 @@ export async function cachedJson(url: string, opts: Opts = {}): Promise<any> {
 
 // for results derived from non-JSON downloads (tarballs): the derived JSON is the fixture
 export async function cachedDerived<T>(key: string, compute: () => Promise<T>, fresh = false): Promise<T | null> {
-  const file = join(DIR, `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.json`);
+  const name = `${createHash('sha256').update(key).digest('hex').slice(0, 32)}.json`;
+  const file = join(DIR, name);
   if (MODE !== 'live' && !(fresh && MODE !== 'replay')) {
     try {
-      return JSON.parse(await readFile(file, 'utf8')).data;
+      return await readFixture(name);
     } catch {
       if (MODE === 'replay') return null;
     }
