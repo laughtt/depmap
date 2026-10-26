@@ -10,7 +10,7 @@
 #   7 Configure  .depmap.yml (policy as code, CODEOWNERS), .gitlab/duo/agent-config.yml, flows/depmap.flow.yml, CI/CD variables
 #   8 Monitor    depmap:refresh (scheduled pipeline: advisories re-colour every repo)
 #   9 Govern     /depmap accept|pin decisions with expiry (audit trail in the events feed), depmap::* MR labels
-# deploy:cloudrun is the Release → Deploy step and stays manual.
+# The hosted server (https://lac.adtomic.co) is deployed with deploy/ec2-deploy.sh.
 #
 # Settings > CI/CD > Variables: DEPMAP_TOKEN (masked; = DEPMAP_CI_TOKEN on the depmap host) for depmap:scan.
 # The registry login uses the predefined CI_REGISTRY_* variables. Protect the v* tag pattern (Settings > Repository).
@@ -18,7 +18,7 @@
 include:
   - local: ci/templates/depmap.gitlab-ci.yml
 
-stages: [build, test, depmap, package, release, pages, deploy]
+stages: [build, test, depmap, package, release, pages]
 
 workflow:
   rules:
@@ -178,13 +178,3 @@ pages:
     - cp -r web/dist public/app
   artifacts:
     paths: [public]
-
-deploy:cloudrun:
-  stage: deploy
-  image: google/cloud-sdk:slim
-  needs: [package:image]
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: manual
-  script:
-    - bash deploy/cloudrun-deploy.sh

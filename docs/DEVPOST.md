@@ -3,7 +3,7 @@
 **Path A (new project) · Supervised · all 9 lifecycle stages · sustainability opt-in**
 
 - Live: https://lac.adtomic.co (judges: sign in as `judge`, password in the submission form)
-- Code: <GitLab project URL>
+- Code: https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/5037040/depmap
 - Video: <YouTube URL>
 
 ## The problem
@@ -31,7 +31,7 @@ depmap runs inside GitLab and makes every npm dependency of a project visible, c
    - It also sets a `depmap` commit status that links to the push's own page.
 3. **The GitLab Duo flow investigates and fixes.**
    - When the pipeline fails, the **Duo Agent Platform flow** reads the scan receipt from the job log and explains the risk in plain language.
-   - A developer comments **`@depmap fix chalk`**. The flow's fixer agent:
+   - A developer comments **`@ai-depmap-gitlab-ai-hackathon fix chalk`** (the flow's service account; GitLab creates one per project). The flow's fixer agent:
      1. edits `package.json` (and the required code lines);
      2. commits to `depmap/fix-chalk-5.6.0`;
      3. opens a fix merge request and links it back.
