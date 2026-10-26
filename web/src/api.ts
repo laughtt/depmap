@@ -50,6 +50,7 @@ export type AiFix = {
   edits: { file: string; startLine: number; endLine: number; before: string; after: string; why: string; required: boolean; url?: string }[];
   sources: { label: string; url: string }[];
 };
+export type Slim = { total: number; removable: number; items: { kind: "unused" | "native" | "lighter" | "heavy" | "duplicate"; name: string; saves: number; text: string; command?: string; example?: string; url?: string | null; names?: string[] }[] };
 export type WorldPackage = { name: string; versions: string[]; dependents: number; color: number; category: string; use: string[]; trust: string[] };
 export type Remedy = { kind: "upgrade"; version: string; bump: string; clears?: number } | { kind: "switch"; version: string } | { kind: "remove" };
 export type AdvisoryDetail = {
@@ -122,6 +123,7 @@ export const api = {
   importProject: (id: string, projectId: number, ref?: string) =>
     call<{ repo: string; snapshotId: number }>("POST", `/api/connections/${enc(id)}/import`, { projectId, ref }),
   world: () => call<{ nodes: WorldPackage[]; edges: [string, string][] }>("GET", "/api/world"),
+  slim: (snapshotId: number) => call<Slim | null>("GET", `/api/snapshots/${snapshotId}/slim`),
   remedies: (snapshotId: number) => call<CodeFix[]>("GET", `/api/snapshots/${snapshotId}/remedies`),
   // 409 carries an authorize link when GitLab write access is still missing
   // pv null: every red package of the scan in one merge request

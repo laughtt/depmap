@@ -1,4 +1,4 @@
-import { api, type Advice, type CodeFix, type PvDetail } from "./api";
+import { api, type Advice, type CodeFix, type PvDetail, type Slim } from "./api";
 import { bindCopy, fixPanel, fixPending } from "./fix";
 import { verdict } from "./drawer";
 import { F, pvName, pvVersion } from "./graph";
@@ -23,7 +23,7 @@ export async function commitScreen(root: HTMLElement, repo: string, snapshotId: 
     map.setHalos(delta.added.map(idx).filter((i) => i >= 0), delta.upgraded.map((u) => idx(`${u.name}@${u.to}`)).filter((i) => i >= 0));
 
     const reds = [...state.color.keys()].filter((i) => i > 0 && state.color[i] === 2).slice(0, 25);
-    const [details, fixes] = await Promise.all([Promise.all(reds.map((i) => api.pv(G.names[i], snap.id))), api.remedies(snap.id).catch(() => [] as CodeFix[])]);
+    const [details, fixes, lean] = await Promise.all([Promise.all(reds.map((i) => api.pv(G.names[i], snap.id))), api.remedies(snap.id).catch(() => [] as CodeFix[]), api.slim(snap.id).catch(() => null)]);
     const fixOf = new Map(fixes.map((r) => [r.pv, r]));
     const worth = fixes.filter((r) => r.color === 1 && r.action);
     // the gate as it was at this push, not with decisions made later
@@ -50,6 +50,7 @@ export async function commitScreen(root: HTMLElement, repo: string, snapshotId: 
       }</section>
       ${worth.length ? `<section class="cs-card"><h3>Worth fixing <span class="muted">${worth.length} amber</span></h3><ol class="todo">${
         worth.map((r) => `<li>${pvLink(idx(r.pv))}${fixPanel(r)}</li>`).join("")}</ol></section>` : ""}
+      ${lean ? slimHtml(lean) : ""}
       <section class="cs-card"><h3>Changes in this push</h3>${changesHtml(delta, idx, pvLink)}</section>
       <section class="cs-card"><h3>Dependencies <span class="muted">${map.directs.length} direct · ${num(k.total)} total</span></h3>
         <div class="pills">${[2, 1, 0].map((c) => `<span class="pill risk-${RISK[c]} ${k[RISK[c]] ? "" : "zero"}">${glyph(c)}<b>${num(k[RISK[c]])}</b> ${RISK[c]}</span>`).join("")}</div>
@@ -96,6 +97,7 @@ export async function commitScreen(root: HTMLElement, repo: string, snapshotId: 
     map.onSelect = (i) => map.select(i);
     const region = [...reds, ...delta.added.map(idx), ...delta.upgraded.map((u) => idx(`${u.name}@${u.to}`))].filter((i) => i > 0);
     if (region.length && G.n > 400) await map.flyTo(region, 0.5, false);
+    if (location.hash === "#slim") root.querySelector("#slim")?.scrollIntoView({ block: "start" });
     // a row in the MR comment links here with ?pv=: bring that package's fix into view, opened
     const card = focus && root.querySelector<HTMLElement>(`.fx[data-fix="${CSS.escape(focus)}"]`);
     if (card) {
@@ -126,6 +128,20 @@ function todoRed(d: PvDetail, upgraded: { name: string; from: string; to: string
     ${d.fingerprint ? `<p class="fp">Looks like <b>${esc(d.fingerprint.title)}</b>: ${d.fingerprint.matched} of ${d.fingerprint.total} signals</p>` : ""}
     ${r ? fixPanel(r) : `<p><b>Fix:</b> ${action}</p>`}
     <details class="fx-sec"><summary>Accept the risk instead</summary><div class="fx-body"><p>Comment on the MR:</p>${copy(`/depmap accept ${d.pv} 7d: <reason>`)}</div></details></li>`;
+}
+
+const KIND: Record<Slim["items"][number]["kind"], string> = { unused: "Unused", native: "Built-in", lighter: "Lighter", heavy: "Heavy", duplicate: "Duplicates" };
+
+// what to drop to shrink the tree: each row says how many packages go with it
+function slimHtml(s: Slim) {
+  return `<section class="cs-card" id="slim"><h3>Fewer dependencies <span class="muted">${s.removable ? `could drop ~${num(s.removable)} of ${num(s.total)}` : "nothing obvious to drop"}</span></h3>
+    ${s.items.length ? `<ul class="slim">${s.items.map((i) => `<li>
+      <div class="sl-head"><span class="sl-kind ${i.kind}">${KIND[i.kind]}</span><code>${esc(i.name)}</code><span class="sl-saves">−${num(i.saves)}</span></div>
+      <p>${esc(i.text)}${i.url ? ` <a href="${esc(i.url)}" target="_blank" rel="noopener">docs</a>` : ""}</p>
+      ${i.example ? `<pre class="sl-ex">${esc(i.example)}</pre>` : ""}
+      ${i.names && i.names.length > 4 ? `<details class="fx-risks"><summary>All ${i.names.length}</summary><p>${i.names.map((n) => `<code>${esc(n)}</code>`).join(" ")}</p></details>` : ""}
+      ${i.command ? copy(i.command) : ""}</li>`).join("")}</ul>` : `<p class="muted">The tree is already lean: no unused, replaceable or duplicated packages found.</p>`}
+  </section>`;
 }
 
 function todoCode(a: Advice, idx: (pv: string) => number) {

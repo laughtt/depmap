@@ -6,6 +6,7 @@ import { refresh } from '../src/scanner/refresh.ts';
 import { readProject } from '../../scripts/seed-demo.ts';
 import { api } from '../src/api/app.ts';
 import { remedies } from '../src/advisor/remedy.ts';
+import { slim } from '../src/advisor/slim.ts';
 
 const snap = async (ref: string, asOf?: string) =>
   (await q('select * from snapshot where repo = $1 and ref = $2 and ($3::timestamptz is null or as_of = $3) order by id desc limit 1', ['acme/shop', ref, asOf ?? null]))[0];
@@ -68,6 +69,14 @@ describe('scan pipeline (replay fixtures)', () => {
     const ms = flipped.find((f) => f.pv === 'ms@2.1.2');
     expect(ms?.to).toBe(2);
     expect(ms?.repos.sort()).toEqual(['acme/admin', 'acme/shop']);
+  });
+
+  it('recommends fewer dependencies: built-in replacements and duplicated versions, with what each removes', async () => {
+    const lean = (await slim((await snap('main')).id))!;
+    expect(lean.items.find((i) => i.name === 'chalk')).toMatchObject({ kind: 'native', saves: expect.any(Number) });
+    expect(lean.items.find((i) => i.kind === 'duplicate')?.names).toEqual(expect.arrayContaining(['debug', 'ms']));
+    expect(lean.removable).toBeGreaterThan(0);
+    expect(lean.removable).toBeLessThan(lean.total);
   });
 
   it('says where the code uses each red package, what to change it to, why and the sources', async () => {

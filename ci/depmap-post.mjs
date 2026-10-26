@@ -50,6 +50,12 @@ if (rows.length) {
   for (const red of rows) out.push(`| 🔴 | [\`${red.pv}\`](${page}?pv=${encodeURIComponent(red.pv)}) | ${cell(why(red))} | ${fix(red)} |`);
   if (undecided.length > rows.length) out.push(`| | _…and ${undecided.length - rows.length} more_ | | [fix list](${page}) |`);
 }
+const lean = await depmap(`/api/snapshots/${r.snapshotId}/slim`).catch(() => null);
+if (lean?.removable) {
+  const n = (k) => lean.items.filter((i) => i.kind === k).reduce((s, i) => s + (k === 'duplicate' ? i.saves : 1), 0);
+  const parts = [['unused', 'unused'], ['native', 'replaceable by a built-in'], ['heavy', 'heavy for one import'], ['lighter', 'with a lighter option'], ['duplicate', 'duplicated']].filter(([k]) => n(k)).map(([k, label]) => `${n(k)} ${label}`);
+  out.push('', `💡 **Fewer dependencies:** could drop ~${lean.removable} of ${lean.total} packages (${parts.join(', ')}) · [how](${page}#slim)`);
+}
 const changes = r.advice.filter((a) => ['NEEDS_CHANGE', 'REVIEW'].includes(a.verdict));
 if (r.changed.length || changes.length) {
   const added = r.changed.filter((x) => x.change === 'added').length, up = r.changed.filter((x) => x.change.includes('→')).length;

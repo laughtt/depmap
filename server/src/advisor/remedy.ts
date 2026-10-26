@@ -9,7 +9,7 @@ import { findUsage } from './usage.ts';
 
 type Source = { path: string; content: string };
 export type Site = { file: string; line: number; code: string; snippet: { line: number; text: string }[]; calls: { line: number; code: string; name: string }[]; url?: string };
-export type Usage = { sites: Record<string, Site[]>; ranges: Record<string, string>; pnpm: boolean };
+export type Usage = { sites: Record<string, Site[]>; ranges: Record<string, string>; pnpm: boolean; runtime?: string[]; scripts?: string };
 type Edit = { before: string | null; after: string };
 export type Remedy = {
   pv: string; name: string; version: string; color: number; direct: boolean; via: string[]; usedBy: string; usedIn: Site[];
@@ -44,7 +44,8 @@ export function collectUsage(g: DepGraph, sources: Source[], packageJson?: strin
       };
     });
   }
-  return { sites, ranges: { ...pj.devDependencies, ...pj.dependencies }, pnpm: !lockfile.trimStart().startsWith('{') };
+  return { sites, ranges: { ...pj.devDependencies, ...pj.dependencies }, pnpm: !lockfile.trimStart().startsWith('{'),
+    runtime: Object.keys(pj.dependencies ?? {}), scripts: Object.values(pj.scripts ?? {}).join('\n') };
 }
 
 // e18e module-replacements: native APIs, one-line snippets, or lighter packages

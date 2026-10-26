@@ -12,6 +12,7 @@ import semver from 'semver';
 import { WATCHERS, pollWatchers, namesPackage } from '../watchers/watchers.ts';
 import { createConnection, connection, fetchRepoFiles, gitlab, GitLabError } from '../connector/gitlab.ts';
 import { remedies } from '../advisor/remedy.ts';
+import { slim } from '../advisor/slim.ts';
 import { openFixMr } from '../connector/fixmr.ts';
 
 const PUBLIC_URL = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 8787}`;
@@ -408,6 +409,9 @@ api.post('/api/snapshots/:id/fix-mr', async (c) => {
     : [b.pv];
   return c.json(await openFixMr(Number(c.req.param('id')), pvs, await connection(conn.id), u?.profile.username ?? 'depmap'));
 });
+
+// what to drop to shrink the tree: unused, replaceable by a built-in, heavy for one import, duplicated versions
+api.get('/api/snapshots/:id/slim', async (c) => c.json(await slim(Number(c.req.param('id')))));
 
 api.get('/api/snapshots/:id/sbom.cdx.json', async (c) => {
   const [s] = await q('select s.*, g.pvs, g.bin from snapshot s join graph g using (lockfile_sha) where s.id = $1', [Number(c.req.param('id'))]);
