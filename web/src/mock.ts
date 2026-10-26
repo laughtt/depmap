@@ -243,6 +243,10 @@ export async function mockCall(method: string, path: string, body: any): Promise
       return { repo, snapshots: list.length, latest: { ...latest, id: snapId(repo, 3) } };
     }));
   }
+  if (p === "/api/blast") {
+    const text = "MAL-2025-46969: debug 4.4.2 was published from a phished maintainer account with a browser crypto-stealer.";
+    return [{ pv: "debug@4.4.2", color: 2, reason: { code: "malicious", severity: "red", text, url: "https://osv.dev/vulnerability/MAL-2025-46969" }, repos: [{ repo: "demo/admin", snapshotId: 104 }, { repo: "demo/shop", snapshotId: snapId("demo/shop", 3) }] }];
+  }
   if ((m = p.match(/^\/api\/repos\/(.+)\/snapshots$/))) {
     const repo = decodeURIComponent(m[1]), S = await scenario(repo);
     return snapshots(S).map((s, k) => {

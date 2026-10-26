@@ -111,3 +111,32 @@ test("old #/ links land on the new paths, and in-app links change the path witho
   await page.goBack();
   await expect.poll(() => new URL(page.url()).pathname).toBe(`/repos/${REPO}/scans/${SNAP.red}`);
 });
+
+test("with login on, the landing explains depmap and signs in", async ({ page }) => {
+  await page.route("**/api/health", (r) => r.fulfill({ json: { ok: true } }));
+  await page.route("**/api/me", (r) => r.fulfill({ json: { loginRequired: true, gitlabUrl: "https://gitlab.com", user: null } }));
+  await page.route("**/api/login", (r) => r.fulfill({ status: 401, json: { error: "Wrong username or password" } }));
+  await page.goto("/");
+  await expect(page.locator(".landing h1")).toContainText("coloured by risk");
+  await expect(page.locator(".values > li")).toHaveCount(3);
+  await expect(page.getByRole("link", { name: "Sign in with GitLab" })).toHaveAttribute("href", "/api/oauth/start");
+  await page.getByRole("button", { name: "judge" }).click();
+  await expect(page.getByLabel("Username")).toHaveValue("judge");
+  await expect(page.getByLabel("Password")).toBeFocused();
+  await page.getByLabel("Password").fill("not-the-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator(".form-error")).toHaveText("Wrong username or password");
+  await shot(page, "landing");
+});
+
+test("the blast radius lists a risky version shared by repositories and links each scan", async ({ page }) => {
+  await page.goto(url("/"));
+  const blast = page.locator(".blast");
+  await expect(blast.locator("li").first()).toBeVisible();
+  await expect(blast.locator("header p")).toContainText("repositories");
+  expect(await blast.locator("li").first().locator(".bl-repos a").count()).toBeGreaterThan(1);
+  await shot(page, "blast");
+  await blast.getByRole("link", { name: REPO, exact: true }).first().click();
+  await expect.poll(() => new URL(page.url()).pathname).toMatch(new RegExp(`^/repos/${REPO}/scans/\\d+$`));
+  await ready(page);
+});

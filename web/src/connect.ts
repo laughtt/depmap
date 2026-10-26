@@ -121,14 +121,27 @@ export function connectScreen(root: HTMLElement, connectionId?: string) {
   } else form();
 }
 
+const merge = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="12.5" r="1.6"/><path d="M4 5.1v5.8M12 10.9V8a3 3 0 0 0-3-3H6.5"/><path d="m8 3.4-1.6 1.6L8 6.6"/></svg>`;
+
 // shown instead of every screen when the server has login on
 export function loginScreen(root: HTMLElement) {
   root.innerHTML = `<div class="screen plain-screen">
     <header class="topbar"><div class="appbar">${brand}<div class="spacer"></div>${themeButton()}</div></header>
-    <main class="login">
-      <section class="connect-card">
-        <h1>Sign in to depmap</h1>
-        <p class="faint">Depmap maps every npm dependency of your GitLab projects and blocks risky ones in merge requests.</p>
+    <main class="landing">
+      <section class="hero">
+        <h1>Every npm dependency, coloured by risk.</h1>
+        <p>Depmap maps the whole dependency tree of your GitLab projects, blocks risky versions in merge requests, and has an agent open the fix.</p>
+      </section>
+      <ul class="values">
+        <li><ol class="lv-time" aria-label="8 September 2025, UTC"><li><time>13:13</time>malware published</li><li class="hit"><time>13:30</time>depmap blocks it</li><li><time>14:26</time>first advisory</li></ol>
+          <div><b>Caught the chalk and debug malware</b><span>On 8 Sept 2025, 17 minutes after release and an hour before the first advisory.</span></div></li>
+        <li><pre class="lv-code" aria-hidden="true"><span class="f">src/log.js:1</span><del>const chalk = require("chalk")</del><ins>import chalk from "chalk"</ins></pre>
+          <div><b>Points at the line to change</b><span>Each risky upgrade comes with the file, the line and the fix.</span></div></li>
+        <li><div class="lv-mr" aria-hidden="true">${merge}<span>Pin debug to 4.4.1</span><i>Approve</i></div>
+          <div><b>Opens the fix merge request</b><span>An agent writes it. You review and approve.</span></div></li>
+      </ul>
+      <section class="connect-card signin">
+        <h2>Sign in</h2>
         <a class="btn oauth" href="/api/oauth/start">${tanuki}<span>Sign in with GitLab</span></a>
         <p class="faint small">Lets depmap read the repositories your ${esc(new URL(session.gitlabUrl).host)} account can see.</p>
         <div class="or"><span>or with a depmap account</span></div>
@@ -138,9 +151,14 @@ export function loginScreen(root: HTMLElement) {
           <div class="form-error" role="alert" hidden></div>
           <div class="login-actions"><button class="btn primary" type="submit" value="login">Sign in</button><button class="btn" type="submit" value="signup">Create account</button></div>
         </form>
+        <p class="judges">Judges: sign in with <button type="button" class="link" data-judge>judge</button> and the password in the Devpost submission.</p>
       </section>
     </main></div>`;
   const f = root.querySelector<HTMLFormElement>("form")!, err = f.querySelector<HTMLElement>(".form-error")!;
+  root.querySelector("[data-judge]")!.addEventListener("click", () => {
+    (f.elements.namedItem("username") as HTMLInputElement).value = "judge";
+    (f.elements.namedItem("password") as HTMLInputElement).focus();
+  });
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     const mode = ((e as SubmitEvent).submitter as HTMLButtonElement).value as "login" | "signup";

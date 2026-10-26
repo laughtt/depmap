@@ -46,7 +46,7 @@ describe('scan pipeline (replay fixtures)', () => {
     expect(early.flatMap((r) => r.reasons.map((x: any) => x.code))).toEqual(['cooldown', 'cooldown']);
     expect((await at('2025-09-08T18:00:00Z')).flatMap((r) => r.reasons.map((x: any) => x.code))).toContain('malicious');
     expect((await at('2025-09-09T13:00:00Z')).flatMap((r) => r.reasons.map((x: any) => x.code))).toContain('security-post');
-    expect((await snap('deps-sept-8', '2025-09-08T13:30:00Z')).gate).toEqual({ pass: false, undecidedReds: ['chalk@5.6.1', 'debug@4.4.2'] });
+    expect((await snap('deps-sept-8', '2025-09-08T13:30:00Z')).gate).toMatchObject({ pass: false, undecidedReds: ['chalk@5.6.1', 'debug@4.4.2'] });
   });
 
   it('an accepted decision clears the gate on re-scan', async () => {

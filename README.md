@@ -32,6 +32,24 @@ Browser: Vite + TS ── Rust→WASM graph core (layout, paths, diff; 50k nodes
 | `flows/` | the Duo flow (v1 YAML) and its local simulator |
 | `deploy/` | Dockerfile (same image locally and on Cloud Run), `cloudrun-deploy.sh` |
 
+## Policy as code: `.depmap.yml`
+Put it at the root of a scanned repo (example: `demo/shop/.depmap.yml`; depmap's own is `.depmap.yml`). `depmap:scan` sends it with every scan; the server applies it in the risk rules and the gate, and stores it on the snapshot, so the UI and the scheduled refresh judge with the same policy. A typo or unknown key fails the scan.
+```yaml
+cooldown_hours: 48          # red while younger than this, amber "recent" up to 3x (default 24)
+block_on: [red, amber]      # colours that fail depmap:gate (default [red])
+allow:                      # standing accept decisions: name@semver-range plus why
+  - pkg: debug@~4.4.0
+    reason: pinned by the logging team
+licenses:
+  deny: [AGPL-3.0]          # the package turns red; AGPL-3.0 also matches -only / -or-later
+```
+The gate log names the rule for each blocked package, e.g. `x chalk@5.6.1  [policy: block_on: red · cooldown_hours: 48]`, and lists the packages that `allow` let through. `CODEOWNERS` protects `.depmap.yml` and `ci/`.
+
+**Fix MRs and lockfiles:** on `depmap/fix-*` branches (the Duo flow's fix MRs), `depmap:relock` regenerates the lockfile (`--lockfile-only` / `--package-lock-only`, no scripts) and pushes it back with `GITLAB_TOKEN` (needs `write_repository`). The new pipeline scans the fixed lockfile. If the lockfile is already up to date, it doesn't push, so there's no loop.
+
+## Releases
+Pushing a `v*` tag runs the release pipeline in `.gitlab-ci.yml`. The tests run first. Then `package:image` pushes `$CI_REGISTRY_IMAGE:<tag>`, and `depmap:scan` and `depmap:gate` check depmap's own `pnpm-lock.yaml`. Finally `release` creates the GitLab Release. It holds a changelog of the commits since the previous tag, the CycloneDX SBOM (from that self-scan) as an asset, and links to the image and the depmap page. MR and `main` pipelines run the server tests (vitest with a `postgres:17` service), the web typecheck and build, and the depmap gate on this repo.
+
 ## Run it locally (no cloud needed)
 One command: `scripts/demo.sh`. It starts Postgres, seeds the demo timeline, and runs the API + UI (:8787) and the local GitLab (:8929/view). Or step by step:
 ```

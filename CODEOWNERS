@@ -1,0 +1,12 @@
+# GitLab reads one CODEOWNERS file (this one wins over .gitlab/CODEOWNERS), so it carries every protected path.
+# Changes to what counts as risky, or to what the agents and the pipeline may do, need a security owner's approval.
+[Security policy]
+/.depmap.yml @laughtt
+/demo/shop/.depmap.yml @laughtt
+/ci/ @laughtt
+/.gitlab-ci.yml @laughtt
+/server/src/scanner/rules.ts @laughtt
+/server/src/scanner/fingerprints.ts @laughtt
+/server/src/watchers/ @laughtt
+/flows/ @laughtt
+/.gitlab/duo/ @laughtt

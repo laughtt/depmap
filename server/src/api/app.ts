@@ -42,7 +42,7 @@ async function sessionUser(c: Context): Promise<User | null> {
 const startSession = (c: Context, sid: string) =>
   setCookie(c, 'dm_session', sign(sid), { path: '/', httpOnly: true, sameSite: 'Lax', secure: PUBLIC_URL.startsWith('https'), maxAge: 30 * 86400 });
 
-const hashPassword = (pw: string, salt = randomBytes(16)) => `${salt.toString('base64')}.${scryptSync(pw, salt, 32).toString('base64')}`;
+export const hashPassword = (pw: string, salt = randomBytes(16)) => `${salt.toString('base64')}.${scryptSync(pw, salt, 32).toString('base64')}`;
 const checkPassword = (pw: string, stored: string) => {
   const [salt, hash] = stored.split('.').map((s) => Buffer.from(s, 'base64'));
   return timingSafeEqual(scryptSync(pw, salt, 32), hash);
@@ -456,4 +456,14 @@ api.get('/api/snapshots/:id/sbom.cdx.json', async (c) => {
     dependencies: s.pvs.map((pv: string, i: number) => ({ ref: pv, dependsOn: (deps.get(i) ?? []).map((b) => s.pvs[b]) })),
     vulnerabilities: [...vulns.values()],
   });
+});
+
+// blast radius: red and amber versions that the latest scan of two or more repos contains
+api.get('/api/blast', async (c) => {
+  const rows = await q(`with latest as (select distinct on (repo) id, repo from snapshot where kind <> 'crawl' order by repo, id desc)
+    select d.pv, max(d.color)::int as color, (array_agg(d.reasons order by d.color desc))[1] as reasons,
+      json_agg(json_build_object('repo', l.repo, 'snapshotId', l.id) order by l.repo) as repos
+    from snapshot_pv d join latest l on l.id = d.snapshot_id where d.color in (1, 2)
+    group by d.pv having count(*) > 1 order by max(d.color) desc, count(*) desc, d.pv`);
+  return c.json(rows.map((r) => ({ pv: r.pv, color: r.color, reason: r.reasons[0] ?? null, repos: r.repos })));
 });

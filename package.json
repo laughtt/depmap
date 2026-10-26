@@ -13,6 +13,7 @@
     "dev:api": "node --env-file-if-exists=.env.local server/src/api/main.ts",
     "dev:mock": "node server/src/gitlab/mock.ts",
     "dev:web": "pnpm --filter web dev",
+    "seed:judges": "DATA_MODE=replay ADVISORY_FEED=fixtures/feed/simulated-advisory.json node scripts/seed-demo.ts --judges",
     "test:rust": "cd crates/graph-core && cargo test --quiet",
     "test:server": "pnpm --filter server test",
     "test:web": "pnpm --filter web test:e2e",

@@ -1,8 +1,8 @@
 // depmap:report (post): one MR note, created once and then updated, plus a scoped label; starts the Duo flow when the gate fails.
 import { existsSync, readFileSync } from 'node:fs';
-import { MARKER, MR, PROJECT, env, gitlab, readResult } from './depmap-lib.mjs';
+import { MARKER, MR, PROJECT, depmap, env, gitlab, readResult } from './depmap-lib.mjs';
 
-const { receipt: r } = readResult();
+const { receipt: r, metrics: m } = readResult();
 if (!MR) {
   console.log('depmap post: not a merge request pipeline, nothing to post');
   process.exit(0);
@@ -83,7 +83,7 @@ if (undecided.length) {
   }
   out.push('```');
 } else out.push('Nothing to decide. To accept a red package later, comment `/depmap accept <pkg@version> <N>d: <reason>` and re-run the pipeline.');
-out.push('', `<sub>Posted by depmap CI (pipeline ${r.pipelineId ?? '-'}, job ${r.jobId ?? '-'}) · this pipeline used 0 GitLab credits · updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);
+out.push('', `<sub>Posted by depmap CI (pipeline ${r.pipelineId ?? '-'}, job ${r.jobId ?? '-'}) · this pipeline used 0 GitLab credits${m ? ` · SCI ${m.gco2e.toFixed(4)} gCO₂e for this scan (${m.fetches} fetches, ${m.cacheHits} reused)` : ''} · updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);
 const body = out.join('\n');
 
 const me = await gitlab('/user');

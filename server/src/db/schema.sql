@@ -194,3 +194,5 @@ create index if not exists watch_item_published on watch_item(published);
 alter table snapshot add column if not exists delta jsonb;
 alter table snapshot add column if not exists metrics jsonb;
 alter table crawl_queue add column if not exists hits int not null default 1;
+-- the scanned repo's .depmap.yml as applied (defaults filled), so the refresh job and the UI judge with the same policy
+alter table snapshot add column if not exists policy jsonb;

@@ -24,34 +24,45 @@ export function readProject(dir: string) {
   return { lockfile: readFileSync(join(dir, 'package-lock.json'), 'utf8'), packageJson: readFileSync(join(dir, 'package.json'), 'utf8'), sources };
 }
 
-const steps = [
-  { dir: 'shop', repo: 'acme/shop', ref: 'main', commit: 'c1', asOf: '2025-08-01T10:00:00Z' },
-  { dir: 'scenarios/a-chalk5', repo: 'acme/shop', ref: 'chalk-5', commit: 'a1', base: 'c1', mrIid: 1, asOf: '2025-08-20T09:00:00Z' },
-  { dir: 'scenarios/b-debug-patch', repo: 'acme/shop', ref: 'debug-4.3.7', commit: 'b1', base: 'c1', mrIid: 2, asOf: '2025-08-22T09:00:00Z' },
-  { dir: 'scenarios/c-transitive', repo: 'acme/shop', ref: 'ms-override', commit: 'x1', base: 'c1', mrIid: 3, asOf: '2025-08-25T09:00:00Z' },
-  { dir: 'scenarios/e-main-esm', repo: 'acme/shop', ref: 'main', commit: 'c2', asOf: '2025-09-01T10:00:00Z' },
-  { dir: 'scenarios/d-replay-2025-09-08', repo: 'acme/shop', ref: 'deps-sept-8', commit: 'd1', base: 'c2', mrIid: 4, asOf: '2025-09-08T13:30:00Z' },
-  { dir: 'scenarios/d-replay-2025-09-08', repo: 'acme/shop', ref: 'deps-sept-8', commit: 'd1', base: 'c2', mrIid: 4, asOf: '2025-09-08T18:00:00Z' },
-  { dir: 'scenarios/d-replay-2025-09-08', repo: 'acme/shop', ref: 'deps-sept-8', commit: 'd1', base: 'c2', mrIid: 4, asOf: '2025-09-09T13:00:00Z' },
-  { dir: 'admin', repo: 'acme/admin', ref: 'main', commit: 'm1', asOf: '2025-09-01T10:00:00Z' },
+const steps: { dir: string; repo: string; ref: string; commit: string; base?: string; mrIid?: number; kind?: string; asOf: string }[] = [
+  { dir: 'shop', repo: 'shop', ref: 'main', commit: 'c1', asOf: '2025-08-01T10:00:00Z' },
+  { dir: 'scenarios/a-chalk5', repo: 'shop', ref: 'chalk-5', commit: 'a1', base: 'c1', mrIid: 1, asOf: '2025-08-20T09:00:00Z' },
+  { dir: 'scenarios/b-debug-patch', repo: 'shop', ref: 'debug-4.3.7', commit: 'b1', base: 'c1', mrIid: 2, asOf: '2025-08-22T09:00:00Z' },
+  { dir: 'scenarios/c-transitive', repo: 'shop', ref: 'ms-override', commit: 'x1', base: 'c1', mrIid: 3, asOf: '2025-08-25T09:00:00Z' },
+  { dir: 'scenarios/e-main-esm', repo: 'shop', ref: 'main', commit: 'c2', asOf: '2025-09-01T10:00:00Z' },
+  { dir: 'scenarios/d-replay-2025-09-08', repo: 'shop', ref: 'deps-sept-8', commit: 'd1', base: 'c2', mrIid: 4, asOf: '2025-09-08T13:30:00Z' },
+  { dir: 'scenarios/d-replay-2025-09-08', repo: 'shop', ref: 'deps-sept-8', commit: 'd1', base: 'c2', mrIid: 4, asOf: '2025-09-08T18:00:00Z' },
+  { dir: 'scenarios/d-replay-2025-09-08', repo: 'shop', ref: 'deps-sept-8', commit: 'd1', base: 'c2', mrIid: 4, asOf: '2025-09-09T13:00:00Z' },
+  { dir: 'admin', repo: 'admin', ref: 'main', commit: 'm1', asOf: '2025-09-01T10:00:00Z' },
 ];
 
-export async function seed() {
+// prefix 'acme/' is the local demo and the tests; --judges seeds demo/acme-shop and demo/acme-admin next to real data
+export async function seed(prefix = 'acme/', judges = false) {
   await migrate();
   console.log('watchers:', (await pollWatchers({ fresh: true })).map((w) => `${w.id}:${w.items}`).join(' '));
-  for (const s of steps) {
-    const r = await scan({ ...readProject(join(DEMO, s.dir)), repo: s.repo, ref: s.ref, commitSha: sha(s.commit), baseSha: s.base ? sha(s.base) : undefined, mrIid: s.mrIid, asOf: s.asOf });
-    console.log(`${s.repo} ${s.ref} @${s.asOf}: snapshot ${r.snapshotId}`, r.counts, r.gate.pass ? 'gate pass' : `gate FAIL ${r.gate.undecidedReds.join(', ')}`,
+  // refresh() re-assesses every repo, so judges get the same "advisory lands today" step as re-scans of the demo main branches only
+  const today = process.env.REFRESH_AS_OF ?? '2026-10-25T12:00:00Z';
+  const heads = judges ? steps.filter((s) => s.commit === 'c2' || s.commit === 'm1').map((s) => ({ ...s, base: s.commit, kind: 'refresh', asOf: today })) : [];
+  for (const s of [...steps, ...heads]) {
+    const repo = prefix + s.repo;
+    const r = await scan({ ...readProject(join(DEMO, s.dir)), repo, ref: s.ref, commitSha: sha(s.commit), baseSha: s.base ? sha(s.base) : undefined, mrIid: s.mrIid, kind: s.kind, asOf: s.asOf });
+    console.log(`${repo} ${s.ref} @${s.asOf}: snapshot ${r.snapshotId}`, r.counts, r.gate.pass ? 'gate pass' : `gate FAIL ${r.gate.undecidedReds.join(', ')}`,
       r.advice.map((a) => `${a.package} ${a.from}→${a.to}: ${a.verdict}`).join(' | '));
   }
-  if (process.env.ADVISORY_FEED) {
-    const { flipped } = await refresh(process.env.REFRESH_AS_OF ?? '2026-10-25T12:00:00Z');
+  if (process.env.ADVISORY_FEED && !judges) {
+    const { flipped } = await refresh(today);
     console.log('refresh flipped:', flipped.map((f) => `${f.pv} ${f.from}→${f.to} in ${f.repos.join(', ')}`).join('; ') || 'nothing');
   }
 }
 
 if (import.meta.main) {
-  if (process.argv.includes('--reset')) await q('drop schema public cascade; create schema public;');
-  await seed();
+  if (process.argv.includes('--judges')) {
+    await migrate();
+    if ((await q("select 1 from snapshot where repo like 'demo/acme-%' limit 1")).length) console.log('demo/acme-* already seeded, nothing to do');
+    else await seed('demo/acme-', true);
+  } else {
+    if (process.argv.includes('--reset')) await q('drop schema public cascade; create schema public;');
+    await seed();
+  }
   await pool.end();
 }

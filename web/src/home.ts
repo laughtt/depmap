@@ -1,5 +1,5 @@
-import { api, type Snapshot } from "./api";
-import { RISK, ago, esc, glyph, num, shortSha, paths } from "./ui";
+import { api, isMock, type Reason, type Snapshot } from "./api";
+import { RISK, ago, esc, glyph, num, reasonIcon, shortSha, paths } from "./ui";
 import { stateMsg, topbar } from "./view";
 
 function spark(snaps: Snapshot[]) {
@@ -11,11 +11,29 @@ function spark(snaps: Snapshot[]) {
     <circle cx="${last[0]}" cy="${last[1]}" r="2.6" fill="currentColor"/></svg>`;
 }
 
+type Blast = { pv: string; color: number; reason: Reason | null; repos: { repo: string; snapshotId: number }[] };
+const blastList = async (): Promise<Blast[]> =>
+  (await isMock()) ? (await import("./mock")).mockCall("GET", "/api/blast", null) as Promise<Blast[]> : fetch("/api/blast").then((r) => (r.ok ? r.json() : []));
+
+// one risky package@version and every repository whose latest scan contains it
+function blast(rows: Blast[]) {
+  if (!rows.length) return "";
+  const repos = new Set(rows.flatMap((b) => b.repos.map((r) => r.repo))).size;
+  return `<section class="blast" aria-label="Blast radius"><header><h2>Blast radius</h2><p>${rows.length} risky ${rows.length === 1 ? "version" : "versions"} in ${repos} repositories</p></header>
+    <ul>${rows.map((b) => {
+      const at = b.pv.lastIndexOf("@"), why = b.reason && reasonIcon(b.reason.code);
+      return `<li class="risk-${RISK[b.color]}"><div class="bl-pv">${glyph(b.color)}<b>${esc(b.pv.slice(0, at))}</b><code>${esc(b.pv.slice(at + 1))}</code></div>
+        ${why ? `<p class="bl-why" title="${esc(b.reason!.text)}">${why.svg}<span><b>${why.label}.</b> ${esc(b.reason!.text)}</span></p>` : ""}
+        <div class="bl-repos">${b.repos.map((r) => `<a href="${paths.scan(r.repo, r.snapshotId)}">${esc(r.repo)}</a>`).join("")}</div></li>`;
+    }).join("")}</ul></section>`;
+}
+
 export async function homeScreen(root: HTMLElement) {
   root.innerHTML = `<div class="screen plain-screen">
     <header class="topbar">${topbar("repos")}</header>
     <main class="home"><div class="page-head"><div><h1>Repositories</h1><p>Every connected project with its latest scan. Red counts packages to act on now.</p></div><a class="btn primary" href="/connect">Connect a repository</a></div><div class="repo-grid"><div class="repo-card skeleton-card"></div><div class="repo-card skeleton-card"></div></div></main></div>`;
   const grid = root.querySelector<HTMLElement>(".repo-grid")!;
+  blastList().then((rows) => grid.insertAdjacentHTML("beforebegin", blast(rows))).catch(() => {});
   try {
     const repos = await api.repos();
     if (!repos.length) {

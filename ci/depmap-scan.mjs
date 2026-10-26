@@ -43,6 +43,7 @@ const result = await depmap('/api/scan', {
   repo, ref, commitSha: env.CI_COMMIT_SHA, baseSha: env.CI_MERGE_REQUEST_DIFF_BASE_SHA || undefined, mrIid: MR,
   lockfile: readFileSync(join(dir, lockName), 'utf8'), packageJson: existsSync(join(dir, 'package.json')) ? readFileSync(join(dir, 'package.json'), 'utf8') : undefined,
   sources, asOf: env.DEPMAP_AS_OF || undefined, webUrl: env.CI_PROJECT_URL,
+  policy: existsSync(join(dir, '.depmap.yml')) ? readFileSync(join(dir, '.depmap.yml'), 'utf8') : undefined,
 });
 const id = result.snapshotId;
 
@@ -53,7 +54,7 @@ const names = bin.subarray(bin.length - bin.readUInt32LE(16)).toString('utf8').s
 const color = Buffer.from(state.color, 'base64');
 const colorOf = new Map(names.map((pv, i) => [pv, COLORS[color[i]]]));
 
-const reds = await Promise.all(names.filter((_, i) => i > 0 && color[i] === 2).slice(0, 25).map(async (pv) => {
+const reds = await Promise.all(names.filter((pv, i) => i > 0 && (color[i] === 2 || result.gate.undecidedReds.includes(pv))).slice(0, 25).map(async (pv) => {
   const d = await depmap(`/api/pv?pv=${encodeURIComponent(pv)}&snapshot=${id}`);
   const fp = d.fingerprint;
   return {
@@ -92,6 +93,7 @@ writeFileSync(join(dir, 'depmap.json'), JSON.stringify({ ...result, snapshotId: 
 const c = result.counts;
 log(`depmap: ${repo}@${ref} snapshot ${id}: ${c.total} packages, ${c.red} red, ${c.amber} amber, ${c.green} green, ${c.grey} grey`);
 for (const a of receipt.advice) log(`depmap: upgrade ${a.package} ${a.from} → ${a.to}: ${a.verdict}`);
+if (existsSync(join(dir, '.depmap.yml'))) log(`depmap: policy .depmap.yml ${JSON.stringify(result.policy)}`);
 log(`depmap: gate ${result.gate.pass ? 'PASS' : `FAIL (${result.gate.undecidedReds.join(', ')})`}`);
 log(`depmap: page ${receipt.urls.page}`);
 // every pipeline publishes its page: a `depmap` commit status links the commit (and this pipeline) to it

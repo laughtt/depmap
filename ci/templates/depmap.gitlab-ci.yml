@@ -15,6 +15,13 @@
 #   DEPMAP_LOCKFILE     default package-lock.json, then pnpm-lock.yaml
 #   DEPMAP_RENDER_URL   the UI as the report job's browser reaches it, if different from DEPMAP_APP_URL
 # CI does all the crawling and spends 0 GitLab credits; the flow only reads the receipt at the end of the scan log.
+#
+# Policy as code: a .depmap.yml at the repo root (cooldown_hours, block_on, allow, licenses.deny) is sent with every scan;
+# the gate log names the policy rule that failed. Protect it with CODEOWNERS.
+#
+# depmap:relock: the Duo flow's fix MRs (branches depmap/fix-<pkg>-<version>) edit package.json but cannot regenerate
+# the lockfile. On those branches this job does it (no install, no scripts) and pushes it back with GITLAB_TOKEN
+# (needs write_repository); the push starts a new pipeline that scans the fixed lockfile. Nothing changed: no push, no loop.
 
 stages: [depmap]
 
@@ -32,8 +39,27 @@ stages: [depmap]
         if [ "$CI_JOB_NAME" = "depmap:report" ]; then npm install --no-save --prefix "$DEPMAP_CI_DIR" playwright-core@1.64.1 >/dev/null 2>&1 || true; fi
       fi
 
+depmap:relock:
+  extends: .depmap
+  before_script: []
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^depmap\/fix-/
+  variables:
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  script:
+    - |
+      if [ -f pnpm-lock.yaml ]; then LOCK=pnpm-lock.yaml; corepack enable && pnpm install --lockfile-only --ignore-scripts
+      else LOCK=package-lock.json; npm install --package-lock-only --ignore-scripts --no-audit --no-fund; fi
+      git add "$LOCK"
+      if git diff --cached --quiet; then echo "depmap: $LOCK is up to date"; exit 0; fi
+      git -c user.name=depmap-bot -c user.email=depmap-bot@noreply.gitlab.com commit -m "depmap: regenerate lockfile"
+      git push "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:$CI_COMMIT_BRANCH"
+
 depmap:scan:
   extends: .depmap
+  needs:
+    - job: depmap:relock
+      optional: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
       when: never
@@ -44,7 +70,7 @@ depmap:scan:
     - node "$DEPMAP_CI_DIR/depmap-sbom.mjs"
   artifacts:
     when: always
-    paths: [depmap.json]
+    paths: [depmap.json, gl-sbom-npm-depmap.cdx.json]
     reports:
       cyclonedx: gl-sbom-npm-depmap.cdx.json
 

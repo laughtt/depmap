@@ -43,6 +43,23 @@ export const TOOLS: Record<string, { description: string; input_schema: object; 
     input_schema: schema({ project_id: 'string', merge_request_iid: 'integer', body: 'string' }),
     run: (a) => gl(`/projects/${encodeURIComponent(a.project_id)}/merge_requests/${a.merge_request_iid}/notes`, { method: 'POST', body: JSON.stringify({ body: a.body }) }),
   },
+  get_repository_file: {
+    description: 'Get the raw content of a file in a repository at a ref.',
+    input_schema: schema({ project_id: 'string', file_path: 'string', ref: 'string' }),
+    run: (a) => gl(`/projects/${encodeURIComponent(a.project_id)}/repository/files/${encodeURIComponent(a.file_path)}/raw?ref=${encodeURIComponent(a.ref)}`).then(String),
+  },
+  create_commit: {
+    description: 'Create a commit on a branch (created from start_branch when new) with update/create actions: [{action, file_path, content}].',
+    input_schema: { type: 'object', properties: { project_id: { type: 'string' }, branch: { type: 'string' }, start_branch: { type: 'string' }, commit_message: { type: 'string' },
+      actions: { type: 'array', items: { type: 'object', properties: { action: { type: 'string' }, file_path: { type: 'string' }, content: { type: 'string' } }, required: ['action', 'file_path', 'content'] } } },
+      required: ['project_id', 'branch', 'commit_message', 'actions'] },
+    run: (a) => gl(`/projects/${encodeURIComponent(a.project_id)}/repository/commits`, { method: 'POST', body: JSON.stringify(a) }),
+  },
+  create_merge_request: {
+    description: 'Open a merge request.',
+    input_schema: schema({ project_id: 'string', source_branch: 'string', target_branch: 'string', title: 'string', description: 'string' }),
+    run: (a) => gl(`/projects/${encodeURIComponent(a.project_id)}/merge_requests`, { method: 'POST', body: JSON.stringify(a) }),
+  },
   create_issue_note: {
     description: 'Post a comment (Markdown) on an issue.',
     input_schema: schema({ project_id: 'string', issue_iid: 'integer', body: 'string' }),
@@ -96,10 +113,11 @@ function next(doc: any, from: string, ctx: any): string {
   return routes[value] ?? routes[value.split(/\s/)[0]] ?? routes.default_route ?? r.condition.default_route ?? 'end';
 }
 
-export async function runFlow(doc: any, goal: string, projectId: string, mode = process.env.LLM_MODE ?? 'mock') {
-  const ctx: any = { goal, project_id: projectId };
+// start/receipt let one component run on its own, e.g. the fixer against a receipt saved from a depmap:scan job
+export async function runFlow(doc: any, goal: string, projectId: string, mode = process.env.LLM_MODE ?? 'mock', start?: string, receipt?: string) {
+  const ctx: any = { goal, project_id: projectId, ...(receipt && { reader: { final_answer: receipt } }) };
   const byName = new Map(doc.components.map((c: any) => [c.name, c]));
-  for (let name = doc.flow.entry_point, steps = 0; name !== 'end' && steps < 20; name = next(doc, name, ctx), steps++) {
+  for (let name = start ?? doc.flow.entry_point, steps = 0; name !== 'end' && steps < 20; name = next(doc, name, ctx), steps++) {
     const comp: any = byName.get(name);
     const inputs = Object.fromEntries((comp.inputs ?? []).map((i: any) => [i.as, lookup(ctx, i.from)]));
     const call = async (tool: string, args: any) => {
@@ -123,8 +141,8 @@ async function claude(comp: any, prompt: any, inputs: any, call: (t: string, a: 
   for (let turn = 0; turn < 12; turn++) {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'x-api-key': String(process.env.ANTHROPIC_API_KEY), 'anthropic-version': '2023-06-01', 'anthropic-beta': 'server-side-fallback-2026-07-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-5-5', max_tokens: 16000, fallbacks: 'default', system: render(prompt.prompt_template.system, inputs), tools, messages }),
+      headers: { 'x-api-key': String(process.env.ANTHROPIC_API_KEY), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: process.env.AI_MODEL ?? 'claude-haiku-5-5', max_tokens: 16000, system: render(prompt.prompt_template.system, inputs), tools, messages }),
     });
     const msg = await res.json();
     if (!res.ok) throw new Error(`Anthropic ${res.status}: ${JSON.stringify(msg).slice(0, 300)}`);
@@ -164,6 +182,29 @@ const MOCK: Record<string, (inputs: any, call: (t: string, a: any) => Promise<an
     return [...log.matchAll(/BEGIN_DEPMAP_JSON\s*\n([\s\S]*?)\n\s*END_DEPMAP_JSON/g)].at(-1)?.[1].trim() ?? 'SKIP';
   },
 
+  async triage({ goal }) {
+    return /(@depmap|\/depmap)\s+(fix|patch|upgrade)\b/i.test(goal) ? 'FIX' : 'EXPLAIN';
+  },
+  async fixer({ receipt, goal }, call) {
+    const r = JSON.parse(receipt), named = goal.match(/fix\s+(@?[\w./-]+)/i)?.[1];
+    const red = r.reds.find((x: any) => named && (x.pv === named || x.pv.startsWith(`${named}@`))) ?? r.reds.find((x: any) => x.undecided);
+    const rm = red?.remedy, project_id = String(r.projectId);
+    if (!rm?.action?.version) {
+      await call('create_merge_request_note', { project_id, merge_request_iid: r.mrIid, body: `depmap: ${red?.pv ?? 'this package'} has no version to move to; replace it by hand.` });
+      return 'no fix';
+    }
+    const pj = JSON.parse(await call('get_repository_file', { project_id, file_path: 'package.json', ref: r.ref }));
+    const section = ['dependencies', 'devDependencies'].find((k) => pj[k]?.[rm.name]);
+    if (rm.direct && section) pj[section][rm.name] = rm.action.kind === 'pin' ? rm.action.version : `^${rm.action.version}`;
+    else pj.overrides = { ...pj.overrides, [rm.name]: rm.action.version };
+    const branch = `depmap/fix-${rm.name.replace(/[@/]/g, '-').replace(/^-/, '')}-${rm.action.version}`;
+    await call('create_commit', { project_id, branch, start_branch: r.ref, commit_message: `depmap: ${rm.action.kind} ${rm.name} to ${rm.action.version}`,
+      actions: [{ action: 'update', file_path: 'package.json', content: `${JSON.stringify(pj, null, 2)}\n` }] });
+    const mr = await call('create_merge_request', { project_id, source_branch: branch, target_branch: r.ref, title: `Fix ${red.pv}: ${rm.action.kind} ${rm.name} to ${rm.action.version}`,
+      description: `${rm.action.text}\n\n${red.reasons.map((x: any) => `- ${x.text}`).join('\n')}\n\nThe depmap:relock job regenerates the lockfile in this merge request's pipeline.` });
+    await call('create_merge_request_note', { project_id, merge_request_iid: r.mrIid, body: `Opened !${mr.iid} to fix ${red.pv}: ${mr.web_url}` });
+    return `opened !${mr.iid}`;
+  },
   async investigator({ receipt, goal }, call) {
     const r = JSON.parse(receipt);
     const previous = (pv: string) => r.changed.find((c: any) => c.pv === pv)?.change.split(' → ')[0];
@@ -221,6 +262,8 @@ if (import.meta.main) {
   }
   const mode = process.env.LLM_MODE === 'claude' && process.env.ANTHROPIC_API_KEY ? 'claude' : 'mock';
   console.log(`[flow] workflow ${process.env.DUO_WORKFLOW_ID ?? '-'} on project ${process.env.DUO_PROJECT_ID} (${mode})`);
-  await runFlow(doc, process.env.DUO_WORKFLOW_GOAL ?? process.argv.at(-1)!, String(process.env.DUO_PROJECT_ID ?? '1'), mode);
+  const arg = (k: string) => process.argv.includes(k) ? process.argv[process.argv.indexOf(k) + 1] : undefined;
+  const receipt = arg('--receipt') && readFileSync(arg('--receipt')!, 'utf8');
+  await runFlow(doc, process.env.DUO_WORKFLOW_GOAL ?? process.argv.at(-1)!, String(process.env.DUO_PROJECT_ID ?? '1'), mode, arg('--start'), receipt || undefined);
   console.log('[flow] finished');
 }

@@ -1,0 +1,6 @@
+# depmap's own policy: depmap:scan gates this repo's pnpm-lock.yaml with it (MRs, main and v* release tags).
+cooldown_hours: 24
+block_on: [red]
+licenses:
+  deny: [AGPL-3.0, SSPL-1.0, BUSL-1.1]
+allow: []

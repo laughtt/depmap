@@ -1,0 +1,8 @@
+# depmap policy as code: sent with every depmap:scan, applied by the risk rules and the gate. Changes need a CODEOWNERS approval.
+cooldown_hours: 24        # versions younger than this are red (held); younger than 3x are amber "recent"
+block_on: [red]           # colours that fail depmap:gate; add amber to also hold amber packages
+licenses:
+  deny: [AGPL-3.0, SSPL-1.0]   # a denied license turns the package red (also matches -only / -or-later)
+allow: []                 # standing exceptions, e.g.
+#  - pkg: debug@~4.4.0     # name@semver-range
+#    reason: pinned by the logging team until the 4.4 audit (JIRA-123)
