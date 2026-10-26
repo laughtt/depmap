@@ -27,7 +27,7 @@ const aiOf = new Map(undecided.length ? (await depmap(`/api/snapshots/${r.snapsh
 const short = (t, n = 72) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
 function why(red) {
   if (red.fingerprint) return `Looks like ${red.fingerprint.title} (${red.fingerprint.matched}/${red.fingerprint.total})`;
-  const top = red.reasons.find((x) => x.code === 'malicious') ?? red.reasons[0];
+  const top = red.reasons.find((x) => x.code === 'malicious') ?? red.reasons.find((x) => /\(CRITICAL\)/.test(x.text)) ?? red.reasons[0];
   if (!top) return 'Risky';
   const text = top.text.replace(/^(?:GHSA|MAL|CVE)-[\w-]+ \((\w)(\w+)\): /, (_, a, b) => `${a}${b.toLowerCase()}: `).split(/\.\s/)[0];
   return `${short(text)}${red.reasons.length > 1 ? ` (+${red.reasons.length - 1})` : ''}`;

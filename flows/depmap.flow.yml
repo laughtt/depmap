@@ -151,7 +151,7 @@ prompts:
         - The safest action: pin the version the MR replaces (from "changed"), or wait out the cooldown before upgrading.
           Give the exact /depmap pin or /depmap accept command.
         Keep it short; people skim: one bold verdict line, at most 3 bullets (the most urgent packages first, each with
-        what happened in a few words and the exact command), then one line linking the receipt's urls.page for everything else.
+        what happened in a few words and the exact command), then end with exactly: [Open the fix list →](<the receipt's urls.page>).
         Under 90 words. Never tell anyone to install or run the flagged version.
       user: |
         Goal:
