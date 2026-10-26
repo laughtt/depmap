@@ -42,7 +42,8 @@ export async function commitScreen(root: HTMLElement, repo: string, snapshotId: 
     const pvLink = (i: number, text = G.names[i]) => `<button class="pv-link" data-i="${i}">${glyph(state.color[i])}<code>${esc(text)}</code></button>`;
 
     $(".commit-side").innerHTML = `
-      <section class="cs-card"><h3>To merge</h3>${
+      <section class="cs-card"><h3>To merge${blocking.length > 1 && fixes.some((r) => r.color === 2 && r.action?.version)
+        ? `<button class="btn small primary" data-fix-all>Fix all in one merge request</button>` : ""}</h3><p class="hint" data-fix-all-msg hidden></p>${
         !blocking.length && !changes.length
           ? `<p class="muted">Nothing to do: no undecided red packages and no code changes needed.</p>`
           : `<ol class="todo">${blocking.map((d) => todoRed(d, delta.upgraded, idx(d.pv), (G.flags[idx(d.pv)] & F.direct) > 0, fixOf.get(d.pv))).join("")}${changes.map((a) => todoCode(a, idx)).join("")}</ol>`
@@ -73,6 +74,21 @@ export async function commitScreen(root: HTMLElement, repo: string, snapshotId: 
     };
     if (fixes.some(fixPending)) setTimeout(poll, 4000);
     bindCopy(root);
+    root.querySelector<HTMLButtonElement>("[data-fix-all]")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget as HTMLButtonElement, msg = root.querySelector<HTMLElement>("[data-fix-all-msg]")!;
+      btn.disabled = true;
+      btn.textContent = "Opening merge request…";
+      const r = await api.fixMr(snap.id, null);
+      msg.hidden = false;
+      if (r.ok) {
+        btn.remove();
+        msg.innerHTML = `<a href="${esc(r.mrUrl)}" target="_blank" rel="noopener">Merge request !${r.iid} ↗</a> fixes ${r.fixed.length} package${r.fixed.length === 1 ? "" : "s"}${r.left.length ? `; ${r.left.length} need a decision by hand` : ""}.`;
+      } else {
+        btn.disabled = false;
+        btn.textContent = "Fix all in one merge request";
+        msg.innerHTML = r.authorize ? `${esc(r.error)} <a href="${esc(r.authorize)}">Allow on GitLab</a>` : `Not opened: ${esc(r.error)}`;
+      }
+    });
     root.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-i]");
       if (b) map.select(+b.dataset.i!, true);

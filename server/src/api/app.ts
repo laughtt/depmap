@@ -402,7 +402,11 @@ api.post('/api/snapshots/:id/fix-mr', async (c) => {
   const u = c.get('user');
   const [conn] = await q("select id from connection where gitlab_url = $1 and scope ~ '(^| )api( |$)' and ($2::text is null or owner = $2) order by created_at desc limit 1", [new URL(s.web_url).origin, u?.key ?? null]);
   if (!conn) return c.json({ error: 'Allow depmap to open merge requests on GitLab first.', authorize: `/api/oauth/start?scope=api&return=${encodeURIComponent(b.return ?? '/')}` }, 409);
-  return c.json(await openFixMr(Number(c.req.param('id')), b.pv, await connection(conn.id), u?.profile.username ?? 'depmap'));
+  // "all": every red package of the scan, in one merge request
+  const pvs: string[] = b.all
+    ? (await q('select pv from snapshot_pv where snapshot_id = $1 and color = 2 order by pv', [Number(c.req.param('id'))])).map((r) => r.pv)
+    : [b.pv];
+  return c.json(await openFixMr(Number(c.req.param('id')), pvs, await connection(conn.id), u?.profile.username ?? 'depmap'));
 });
 
 api.get('/api/snapshots/:id/sbom.cdx.json', async (c) => {

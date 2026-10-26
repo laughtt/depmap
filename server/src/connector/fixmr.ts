@@ -49,50 +49,64 @@ async function relock(packageJson: string, lockName: string, lock: string, works
   }
 }
 
-export async function openFixMr(snapshotId: number, pv: string, conn: { url: string; token: string }, by: string) {
+// one merge request for one package, or for every red package of a scan ("fix all")
+export async function openFixMr(snapshotId: number, pvs: string[], conn: { url: string; token: string }, by: string) {
   const [s] = await q('select s.repo, s.ref, s.commit_sha, s.web_url, g.lockfile from snapshot s join graph g using (lockfile_sha) where s.id = $1', [snapshotId]);
-  const [r] = await remedies(snapshotId, [pv]);
-  if (!r?.action?.version) throw new GitLabError(400, `${pv} has no version to move to; replace or remove it by hand`);
+  const fixable = (await remedies(snapshotId, pvs)).filter((r) => r.action?.version);
+  // a transitive fix is left out when the package that pulls it in moves in the same MR: its new version brings its own
+  const moving = new Set(fixable.filter((r) => r.direct).map((r) => r.name));
+  const chosen = fixable.filter((r) => r.direct || !moving.has(r.usedBy));
+  if (!chosen.length) throw new GitLabError(400, `${pvs.length === 1 ? pvs[0] : 'These packages'} have no version to move to; replace or remove them by hand`);
   const gl = (path: string, init?: RequestInit) => gitlab(conn.url, conn.token, path, init);
   const project = await gl(`/projects/${encodeURIComponent(s.repo)}`);
   const raw = (path: string) => gl(`/projects/${project.id}/repository/files/${encodeURIComponent(path)}/raw?ref=${s.commit_sha}`).then(String);
   const pnpm = !s.lockfile.trimStart().startsWith('{');
   const lockName = pnpm ? 'pnpm-lock.yaml' : 'package-lock.json';
 
-  const packageJson = editPackageJson(await raw('package.json'), r, pnpm);
+  let packageJson = await raw('package.json');
+  for (const r of chosen) packageJson = editPackageJson(packageJson, r, pnpm);
   const actions: { action: 'update'; file_path: string; content: string }[] = [{ action: 'update', file_path: 'package.json', content: packageJson }];
-  const fix = r.ai?.status === 'done' ? r.ai.fix : null;
-  const required = (fix?.edits ?? []).filter((e: any) => e.required);
+  const fixes = chosen.map((r) => (r.ai?.status === 'done' ? r.ai.fix : null));
+  const required = fixes.flatMap((f) => (f?.edits ?? []).filter((e: any) => e.required));
   for (const file of new Set<string>(required.map((e: any) => e.file))) {
     actions.push({ action: 'update', file_path: file, content: applyEdits(await raw(file), required.filter((e: any) => e.file === file)) });
   }
   const lock = await relock(packageJson, lockName, s.lockfile, pnpm ? await raw('pnpm-workspace.yaml').catch(() => null) : null);
   if (lock) actions.push({ action: 'update', file_path: lockName, content: lock });
 
-  const branch = `depmap/fix-${r.name.replace(/[@/]/g, '-').replace(/^-/, '')}-${r.action.version}`;
-  const optional = (fix?.edits ?? []).filter((e: any) => !e.required);
+  const one = chosen.length === 1 ? chosen[0] : null;
+  const branch = one ? `depmap/fix-${one.name.replace(/[@/]/g, '-').replace(/^-/, '')}-${one.action!.version}` : `depmap/fix-all-${snapshotId}`;
+  const left = pvs.filter((pv) => !chosen.some((r) => r.pv === pv));
+  const optional = fixes.flatMap((f) => (f?.edits ?? []).filter((e: any) => !e.required));
+  const changes = `Changes: \`package.json\`${required.length ? `, ${required.length} code change${required.length > 1 ? 's' : ''} written by the AI` : ''}${lock ? `, \`${lockName}\` regenerated` : ''}.`;
   const description = [
-    `**${r.action.text}**`, '',
-    ...r.why.map((w) => `- ${w}`), '',
-    `Changes: \`package.json\`${required.length ? `, ${required.length} code change${required.length > 1 ? 's' : ''} (written by ${fix.model}, ${fix.confidence} confidence)` : ''}${lock ? `, \`${lockName}\` regenerated` : ''}.`,
+    ...(one ? [`**${one.action!.text}**`, '', ...one.why.map((w) => `- ${w}`)]
+      : [`**Fixes ${chosen.length} risky packages found by depmap scan #${snapshotId}.**`, '', '| Package | Change | Why |', '|---|---|---|',
+        ...chosen.map((r) => `| \`${r.name}\` | ${r.version} → ${r.action!.version}${r.direct ? '' : ' (override)'} | ${r.why[0]?.split(/\.\s/)[0].replace(/\|/g, '\\|') ?? ''} |`)]),
+    '', changes,
     ...(lock ? [] : ['', `The lockfile could not be regenerated here; run \`${pnpm ? 'pnpm install' : 'npm install'}\` on this branch.`]),
-    ...(optional.length ? ['', 'Optional, not applied:', ...optional.flatMap((e: any) => ['', `\`${e.file}:${e.startLine}\`: ${e.why}`, '```diff', ...e.before.split('\n').map((l: string) => `-${l}`), ...e.after.split('\n').map((l: string) => `+${l}`), '```'])] : []),
-    '', `Sources: ${[...r.sources, ...(fix?.sources ?? [])].slice(0, 8).map((x) => `[${x.label}](${x.url})`).join(' · ')}`,
+    ...(left.length ? ['', `Not in this MR: ${left.map((pv) => `\`${pv}\``).join(', ')} (no fixed version, or fixed by its parent's upgrade above).`] : []),
+    ...(optional.length ? ['', `<details><summary>${optional.length} optional code change${optional.length > 1 ? 's' : ''}, not applied</summary>`,
+      ...optional.flatMap((e: any) => ['', `\`${e.file}:${e.startLine}\`: ${e.why}`, '```diff', ...e.before.split('\n').map((l: string) => `-${l}`), ...e.after.split('\n').map((l: string) => `+${l}`), '```']), '</details>'] : []),
+    '', `Sources: ${chosen.flatMap((r) => r.sources.slice(0, one ? 8 : 1)).map((x) => `[${x.label}](${x.url})`).join(' · ')}`,
     '', `_Opened by depmap for ${by}._`,
   ].join('\n');
 
   let mr: any;
   try {
     await gl(`/projects/${project.id}/repository/commits`, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ branch, start_sha: s.commit_sha, commit_message: `depmap: ${r.action.text.split(':')[0].replace(/\.$/, '')}`, actions }) });
+      body: JSON.stringify({ branch, start_sha: s.commit_sha, commit_message: one ? `depmap: ${one.action!.text.split(':')[0].replace(/\.$/, '')}` : `depmap: fix ${chosen.length} risky packages`, actions }) });
     mr = await gl(`/projects/${project.id}/merge_requests`, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ source_branch: branch, target_branch: s.ref ?? project.default_branch, title: `Fix ${pv}: ${r.action.kind} ${r.name} to ${r.action.version}`, description, remove_source_branch: true }) });
+      body: JSON.stringify({ source_branch: branch, target_branch: s.ref ?? project.default_branch, description, remove_source_branch: true,
+        title: one ? `Fix ${one.pv}: ${one.action!.kind} ${one.name} to ${one.action!.version}` : `Fix ${chosen.length} risky packages (depmap)` }) });
   } catch (e) {
     // the branch exists from an earlier click: hand back its open merge request
     [mr] = await gl(`/projects/${project.id}/merge_requests?state=opened&source_branch=${encodeURIComponent(branch)}`);
     if (!mr) throw e;
   }
-  await q("insert into decision (repo, pv, action, reason, by_user, mr_url) values ($1,$2,'fix',$3,$4,$5)", [s.repo, pv, `Fix merge request !${mr.iid}`, by, mr.web_url]);
-  await q('insert into event (kind, repo, pv, payload) values ($1,$2,$3,$4)', ['decision', s.repo, pv, { action: 'fix', mrUrl: mr.web_url, by }]);
-  return { mrUrl: mr.web_url as string, iid: mr.iid as number, lockfile: !!lock, codeChanges: required.length };
+  for (const r of chosen) {
+    await q("insert into decision (repo, pv, action, reason, by_user, mr_url) values ($1,$2,'fix',$3,$4,$5)", [s.repo, r.pv, `Fix merge request !${mr.iid}`, by, mr.web_url]);
+  }
+  await q('insert into event (kind, repo, payload) values ($1,$2,$3)', ['decision', s.repo, { action: 'fix', pvs: chosen.map((r) => r.pv), mrUrl: mr.web_url, by }]);
+  return { mrUrl: mr.web_url as string, iid: mr.iid as number, lockfile: !!lock, codeChanges: required.length, fixed: chosen.map((r) => r.pv), left };
 }

@@ -124,10 +124,11 @@ export const api = {
   world: () => call<{ nodes: WorldPackage[]; edges: [string, string][] }>("GET", "/api/world"),
   remedies: (snapshotId: number) => call<CodeFix[]>("GET", `/api/snapshots/${snapshotId}/remedies`),
   // 409 carries an authorize link when GitLab write access is still missing
-  fixMr: async (snapshotId: number, pv: string) => {
-    const r = await fetch(`/api/snapshots/${snapshotId}/fix-mr`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pv, return: location.pathname + location.search }) });
+  // pv null: every red package of the scan in one merge request
+  fixMr: async (snapshotId: number, pv: string | null) => {
+    const r = await fetch(`/api/snapshots/${snapshotId}/fix-mr`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pv, all: !pv, return: location.pathname + location.search }) });
     const b = await r.json().catch(() => ({ error: `${r.status} ${r.statusText}` }));
-    return r.ok ? { ok: true as const, ...(b as { mrUrl: string; iid: number; lockfile: boolean; codeChanges: number }) } : { ok: false as const, error: b.error as string, authorize: b.authorize as string | undefined };
+    return r.ok ? { ok: true as const, ...(b as { mrUrl: string; iid: number; lockfile: boolean; codeChanges: number; fixed: string[]; left: string[] }) } : { ok: false as const, error: b.error as string, authorize: b.authorize as string | undefined };
   },
   remedy: async (snapshotId: number, pv: string) => (await call<CodeFix[]>("GET", `/api/snapshots/${snapshotId}/remedies?pv=${enc(pv)}`))[0] ?? null,
   worldPackage: (name: string) => call<{ name: string; versions: WorldVersion[]; dependents: string[] }>("GET", `/api/world/package?name=${enc(name)}`),

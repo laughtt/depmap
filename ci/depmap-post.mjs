@@ -57,7 +57,7 @@ if (r.changed.length || changes.length) {
     changes.map((a) => ` · \`${a.package}\` ${a.from} → ${a.to} needs a code change${a.items?.[0] ? ` at \`${a.items[0].file}:${a.items[0].line}\`` : ''}`).join('')}`);
 }
 out.push('', undecided.length
-  ? `**Next:** comment \`${handle} fix <package>\` to get a fix merge request, or \`/depmap accept <package@version> 7d: <reason>\` to accept the risk.`
+  ? `**Next:** comment \`${handle} fix all\` (or \`fix <package>\`) to get a fix merge request, or \`/depmap accept <package@version> 7d: <reason>\` to accept the risk.`
   : `**Next:** nothing to do.`);
 if (image) out.push('', '<details><summary>Map of this change</summary>', '', image, '', '</details>');
 out.push('', `<sub>depmap · pipeline ${r.pipelineId ?? '-'} · 0 GitLab credits${m ? ` · ${m.gco2e.toFixed(4)} gCO₂e` : ''} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);

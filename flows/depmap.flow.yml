@@ -97,7 +97,7 @@ prompts:
     prompt_template:
       system: |
         Decide what a depmap request asks for. Answer with exactly one word.
-        FIX: a human asked depmap to fix, patch, upgrade or pin a package (for example "@depmap fix chalk", "/depmap fix chalk@5.6.1").
+        FIX: a human asked depmap to fix, patch, upgrade or pin packages (for example "@depmap fix chalk", "@depmap fix all", "/depmap fix chalk@5.6.1").
         EXPLAIN: anything else, including pipeline events and /depmap accept or pin decisions.
       user: |
         {{goal}}
@@ -110,22 +110,26 @@ prompts:
     unit_primitives: []
     prompt_template:
       system: |
-        You open ONE merge request that fixes one risky npm package found by depmap. A human reviews and merges it.
+        You open ONE merge request that fixes risky npm packages found by depmap. A human reviews and merges it.
         The receipt is JSON from the depmap:scan job: projectId, mrIid, ref (the merge request's source branch), and reds[].
         Each red has pv and remedy: name, version, direct, usedBy, action {kind, version, text, packageJson {before, after}}, usedIn[].
-        1. Pick the red whose package the goal names; if it names none, the first red with "undecided": true.
-           If its remedy has no action.version, post a note with create_merge_request_note saying it must be replaced by hand, and stop.
-        2. Read package.json at ref with get_repository_file. Change only that package:
+        1. If the goal says "fix all": take every red with "undecided": true whose remedy has an action.version, except a red that is
+           not direct when its remedy.usedBy is also being upgraded here (that upgrade brings its own fixed copy).
+           Otherwise take the red whose package the goal names; if it names none, the first red with "undecided": true.
+           If nothing taken has a remedy.action.version, post a note with create_merge_request_note saying it must be replaced by hand, and stop.
+        2. Read package.json at ref with get_repository_file. Change only the packages taken:
            direct: its version in dependencies or devDependencies ("^version" for kind upgrade, the exact version for kind pin);
            not direct: add the override from remedy.action.packageJson.after ("overrides" for npm, "pnpm.overrides" for pnpm).
            Keep the file's formatting and every other line.
         3. Read the merge request notes with gitlab_api_get /projects/{projectId}/merge_requests/{mrIid}/notes and find the one
            whose body contains the text "depmap:report". If it shows an "AI code change" marked required for this package, read each named
            file with get_repository_file and apply exactly those diff lines. Do not apply optional changes; list them in the description.
-        4. create_commit on a new branch "depmap/fix-<name>-<version>" (replace @ and / in the name with -) started from ref, with every changed file.
-        5. create_merge_request from that branch into ref. Title: "Fix <pv>: <kind> <name> to <version>".
+        4. create_commit on a new branch started from ref, with every changed file: "depmap/fix-<name>-<version>" for one package
+           (replace @ and / in the name with -), "depmap/fix-all-<snapshotId>" for several.
+        5. create_merge_request from that branch into ref. Title: "Fix <pv>: <kind> <name> to <version>", or "Fix <N> risky packages (depmap)"
+           with a table (package, version change, why in a few words) in the description.
            Description: the reasons from the receipt, what changed, and "The depmap:relock job regenerates the lockfile in this merge request's pipeline."
-        6. create_merge_request_note on merge request mrIid: "Opened !<new iid> to fix <pv>." with its link.
+        6. create_merge_request_note on merge request mrIid: "Opened !<new iid> to fix <pv or N packages>." with its link.
         Never change other packages. Never install, run or download the flagged version.
       user: |
         Goal:
