@@ -65,7 +65,7 @@ async function route() {
   dm.map = null;
   world?.destroy();
   world = null;
-  if (scanPage) return commitScreen(root, repo, snap);
+  if (scanPage) return commitScreen(root, repo, snap, params.get("pv"));
   if (seg[0] === "connect") return connectScreen(root);
   if (seg[0] === "connected") return connectScreen(root, seg[1]);
   if (seg[0] === "render") return renderScreen(root, params);

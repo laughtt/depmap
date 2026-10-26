@@ -167,7 +167,8 @@ app.put(`${P}/merge_requests/:iid`, async (c) => {
 function addNote(projectId: number, type: 'MergeRequest' | 'Issue', iid: number, text: string, author: User) {
   const note = { id: nextId(), type: null, body: text, author, created_at: now(), updated_at: now(), system: false, noteable_type: type, noteable_iid: iid, project_id: projectId };
   S.notes.push(note);
-  if (type === 'MergeRequest' && !author.bot && /@depmap\b/.test(text)) {
+  // like GitLab, a mention inside a code span or block is not a mention
+  if (type === 'MergeRequest' && !author.bot && /@depmap\b/.test(text.replace(/```[\s\S]*?```|`[^`]*`/g, ''))) {
     startWorkflow({ project_id: projectId, goal: `Input: ${text}\nContext: {MergeRequest IID: ${iid}}`, source: 'mention' });
   }
   return note;

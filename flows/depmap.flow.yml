@@ -150,7 +150,9 @@ prompts:
         - What the fingerprint means: name the past attack it resembles and how many signals match.
         - The safest action: pin the version the MR replaces (from "changed"), or wait out the cooldown before upgrading.
           Give the exact /depmap pin or /depmap accept command.
-        Keep it under 250 words. Never tell anyone to install or run the flagged version.
+        Keep it short; people skim: one bold verdict line, at most 3 bullets (the most urgent packages first, each with
+        what happened in a few words and the exact command), then one line linking the receipt's urls.page for everything else.
+        Under 90 words. Never tell anyone to install or run the flagged version.
       user: |
         Goal:
         {{goal}}

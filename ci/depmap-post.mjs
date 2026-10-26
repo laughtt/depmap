@@ -17,73 +17,50 @@ if (existsSync('depmap.png')) {
 
 const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const level = !r.gate.pass ? 'red' : r.counts.red > 0 || r.advice.some((a) => ['NEEDS_CHANGE', 'REVIEW'].includes(a.verdict)) ? 'amber' : 'green';
-const c = r.counts;
+const c = r.counts, page = r.urls.page ?? r.urls.map;
 const undecided = r.reds.filter((x) => x.undecided);
-// AI code changes are written in the background after the scan; give them a moment before posting
-const aiOf = new Map(r.reds.length ? (await depmap(`/api/snapshots/${r.snapshotId}/remedies?wait=90`).catch(() => [])).map((x) => [x.pv, x.ai]) : []);
-const out = [
-  MARKER,
-  `### depmap · ${r.gate.pass ? 'Gate passed' : `Gate failed: ${undecided.length} red package${undecided.length === 1 ? '' : 's'} need a decision`}`,
-  '',
-  `**${c.total}** packages · **${c.red}** red · **${c.amber}** amber · **${c.green}** green${c.grey ? ` · ${c.grey} unknown` : ''} · \`depmap::${level}\``,
-];
-if (image) out.push('', image);
-out.push('', `**[Open this push's page](${r.urls.page ?? r.urls.map})** (tree, what to do to merge, changes) · [full map](${r.urls.map}) · snapshot ${r.snapshotId}${r.asOf ? ` · risk as of ${r.asOf}` : ''}`);
+const handle = env.DEPMAP_FLOW_HANDLE ?? '@depmap';
+// AI code changes are written in the background after the scan; give them a moment so the table can say "code change"
+const aiOf = new Map(undecided.length ? (await depmap(`/api/snapshots/${r.snapshotId}/remedies?wait=60`).catch(() => [])).map((x) => [x.pv, x.ai]) : []);
 
-if (r.changed.length) {
-  out.push('', '#### Changed packages', '', '| Package | Change | Risk |', '|---|---|---|');
-  for (const ch of r.changed) out.push(`| \`${cell(ch.pv.replace(/@[^@]*$/, ''))}\` | ${cell(ch.change)} | ${ch.color ?? '-'} |`);
+// short like the PR bots people already skim (SonarQube, Socket, Codecov): a verdict, five rows, one next step, the rest one click away
+const short = (t, n = 72) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
+function why(red) {
+  if (red.fingerprint) return `Looks like ${red.fingerprint.title} (${red.fingerprint.matched}/${red.fingerprint.total})`;
+  const top = red.reasons.find((x) => x.code === 'malicious') ?? red.reasons[0];
+  if (!top) return 'Risky';
+  const text = top.text.replace(/^(?:GHSA|MAL|CVE)-[\w-]+ \((\w)(\w+)\): /, (_, a, b) => `${a}${b.toLowerCase()}: `).split(/\.\s/)[0];
+  return `${short(text)}${red.reasons.length > 1 ? ` (+${red.reasons.length - 1})` : ''}`;
 }
-
-if (r.reds.length) {
-  out.push('', '#### Red packages', '');
-  for (const red of r.reds) {
-    const d = red.decision;
-    out.push(`- **\`${red.pv}\`**: ${red.undecided ? '**needs a decision**' : `${{ accept: 'accepted', pin: 'pinned' }[d?.action] ?? 'decided'} by @${d?.by ?? '?'}${d?.expiresAt ? ` until ${d.expiresAt.slice(0, 16).replace('T', ' ')} UTC` : ''}`}`);
-    for (const reason of red.reasons) out.push(`  - ${cell(reason.text)} ([${reason.code}](${reason.url}))`);
-    const fp = red.fingerprint;
-    if (fp) out.push(`  - Looks like **${fp.title}**: ${fp.matched} of ${fp.total} signals. ${cell(fp.summary)} ([background](${fp.url}))`);
-    const rm = red.remedy;
-    if (!rm) continue;
-    const through = rm.usedBy !== rm.name ? ` through \`${rm.usedBy}\`` : '';
-    for (const s of rm.usedIn.slice(0, 3)) out.push(`  - Used${through} in \`${s.file}:${s.line}\`: \`${cell(s.code)}\`${s.calls.length ? ` (also line${s.calls.length > 1 ? 's' : ''} ${s.calls.slice(0, 4).map((c) => c.line).join(', ')})` : ''}`);
-    if (rm.action) out.push(`  - **Fix:** ${cell(rm.action.text)}${rm.action.packageJson ? ` In \`package.json\`: \`${cell(rm.action.packageJson.after)}\`` : ''}`);
-    if (rm.alternatives.length) out.push(`  - Or replace \`${rm.alternatives[0].for}\` with ${rm.alternatives.slice(0, 3).map((a) => (a.url ? `[${a.name}](${a.url})` : a.name)).join(', ')}`);
-    if (rm.sources.length) out.push(`  - Sources: ${rm.sources.slice(0, 6).map((s) => `[${cell(s.label)}](${s.url})`).join(' · ')}`);
-    const ai = aiOf.get(red.pv)?.fix;
-    if (ai) {
-      out.push(`  - **AI code change** (${ai.model}, ${ai.confidence} confidence): ${ai.needsCodeChange ? '' : 'no code change is required. '}${cell(ai.summary)}`);
-      for (const e of ai.edits) out.push('', `    \`${e.file}:${e.startLine}\` · ${e.required ? 'required' : 'optional'}: ${cell(e.why)}`, '', '    ```diff', ...e.before.split('\n').map((l) => `    -${l}`), ...e.after.split('\n').map((l) => `    +${l}`), '    ```');
-      if (ai.sources.length) out.push(`    Read: ${ai.sources.slice(0, 4).map((s) => `[${cell(s.label)}](${s.url})`).join(' · ')}`);
-    }
-  }
+function fix(red) {
+  const a = red.remedy?.action, ai = aiOf.get(red.pv)?.fix;
+  const head = !a ? 'Decide' : a.kind === 'upgrade' ? `Upgrade to \`${a.version}\`` : a.kind === 'pin' ? `Pin \`${a.version}\`` : a.kind === 'replace' ? `Replace \`${red.remedy.name}\`` : 'Remove';
+  return `${head}${ai?.needsCodeChange ? ' · code change' : ''}`;
 }
+const rank = (red) => (red.fingerprint || red.reasons.some((x) => x.code === 'malicious') ? 0 : red.reasons.some((x) => /critical/i.test(x.text)) ? 1 : 2);
+const rows = [...undecided].sort((a, b) => rank(a) - rank(b)).slice(0, 5);
 
-if (r.advice.length) {
-  out.push('', '#### Upgrade impact');
-  for (const a of r.advice) {
-    out.push('', `**\`${a.package}\` ${a.from} → ${a.to}** · \`${a.verdict}\`${a.direct ? '' : ' · transitive'}`, '', cell(a.summary));
-    if (a.items?.length) {
-      out.push('', '| Where | Code | Problem | Fix |', '|---|---|---|---|');
-      for (const it of a.items) out.push(`| \`${it.file}:${it.line}\` | \`${cell(it.code)}\` | ${cell(it.problem)} | ${cell(it.fix)} |`);
-      const alts = [...new Set(a.items.flatMap((it) => it.alternatives ?? []))];
-      if (alts.length) out.push('', `Alternatives: ${alts.map(cell).join('; ')}`);
-    }
-    if (!a.direct && a.paths?.[0]) out.push('', `Reaches you via ${a.paths[0].join(' → ')}.`);
-  }
+const out = [MARKER];
+out.push(r.gate.pass
+  ? `### ✅ depmap · Ready to merge${c.red ? ` · ${c.red} red package${c.red === 1 ? '' : 's'} accepted` : ''}`
+  : `### 🔴 depmap · Merge blocked: ${undecided.length} risky package${undecided.length === 1 ? '' : 's'}`);
+out.push('', `**[Open the fix list →](${page})** · ${c.total} packages · 🔴 ${c.red} · 🟠 ${c.amber} · 🟢 ${c.green}`);
+if (rows.length) {
+  out.push('', '| | Package | Why | Fix |', '|---|---|---|---|');
+  for (const red of rows) out.push(`| 🔴 | [\`${red.pv}\`](${page}?pv=${encodeURIComponent(red.pv)}) | ${cell(why(red))} | ${fix(red)} |`);
+  if (undecided.length > rows.length) out.push(`| | _…and ${undecided.length - rows.length} more_ | | [fix list](${page}) |`);
 }
-
-out.push('', '#### How to proceed', '');
-if (undecided.length) {
-  out.push('Change the dependency, or comment one decision per package and re-run the pipeline:', '', '```');
-  for (const red of undecided) {
-    out.push(`/depmap accept ${red.pv} 1d: <why the risk is acceptable>`);
-    const prev = r.changed.find((ch) => ch.pv === red.pv)?.change.split(' → ')[0];
-    if (prev && prev !== 'added') out.push(`/depmap pin ${red.pv.replace(/@[^@]*$/, '')}@${prev}: <reason>`);
-  }
-  out.push('```');
-} else out.push('Nothing to decide. To accept a red package later, comment `/depmap accept <pkg@version> <N>d: <reason>` and re-run the pipeline.');
-out.push('', `<sub>Posted by depmap CI (pipeline ${r.pipelineId ?? '-'}, job ${r.jobId ?? '-'}) · this pipeline used 0 GitLab credits${m ? ` · SCI ${m.gco2e.toFixed(4)} gCO₂e for this scan (${m.fetches} fetches, ${m.cacheHits} reused)` : ''} · updated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);
+const changes = r.advice.filter((a) => ['NEEDS_CHANGE', 'REVIEW'].includes(a.verdict));
+if (r.changed.length || changes.length) {
+  const added = r.changed.filter((x) => x.change === 'added').length, up = r.changed.filter((x) => x.change.includes('→')).length;
+  out.push('', `**This MR:** ${[added && `${added} added`, up && `${up} upgraded`].filter(Boolean).join(' · ') || 'no dependency changes'}${
+    changes.map((a) => ` · \`${a.package}\` ${a.from} → ${a.to} needs a code change${a.items?.[0] ? ` at \`${a.items[0].file}:${a.items[0].line}\`` : ''}`).join('')}`);
+}
+out.push('', undecided.length
+  ? `**Next:** comment \`${handle} fix <package>\` to get a fix merge request, or \`/depmap accept <package@version> 7d: <reason>\` to accept the risk.`
+  : `**Next:** nothing to do.`);
+if (image) out.push('', '<details><summary>Map of this change</summary>', '', image, '', '</details>');
+out.push('', `<sub>depmap · pipeline ${r.pipelineId ?? '-'} · 0 GitLab credits${m ? ` · ${m.gco2e.toFixed(4)} gCO₂e` : ''} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</sub>`);
 const body = out.join('\n');
 
 const me = await gitlab('/user');

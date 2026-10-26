@@ -143,7 +143,7 @@ check('admin: default-branch pipeline scans', adminRun.result?.snapshotId > 0);
 const mr1 = pipeline('MR !1 chalk 4→5', shop, 'chalk-5', await mrVars(1, '2025-08-20T09:00:00Z'));
 const [note1] = await report(1);
 check('MR !1: gate passes', mr1.gate === 'pass');
-check('MR !1: note has Upgrade impact NEEDS_CHANGE at src/log.js:1', note1?.body.includes('#### Upgrade impact') && note1.body.includes('`NEEDS_CHANGE`') && note1.body.includes('`src/log.js:1`'));
+check('MR !1: note says chalk 4 → 5 needs a code change at src/log.js:1', /`chalk` 4\.1\.2 → 5\.3\.0 needs a code change at `src\/log\.js:1`/.test(note1?.body ?? ''));
 check('MR !1: note embeds the uploaded map PNG', /!\[depmap\]\(\/uploads\/\w+\/depmap\.png\)/.test(note1?.body ?? ''), 'needs Chrome');
 const statuses = await (await fetch(`${MOCK}/mock/statuses`)).json();
 check('every pipeline sets a depmap commit status linking to its page', statuses.length >= 3 && statuses.every((st) => st.name === 'depmap' && /\/repos\/acme\/(shop|admin)\/scans\/\d+$/.test(st.target_url)), `${statuses.length} statuses`);
@@ -152,14 +152,14 @@ check('MR !1: label depmap::amber', (await gl('/projects/1/merge_requests/1')).l
 const mr2 = pipeline('MR !2 debug patch', shop, 'debug-4.3.7', await mrVars(2, '2025-08-22T09:00:00Z'));
 const [note2] = await report(2);
 check('MR !2: gate passes', mr2.gate === 'pass');
-check('MR !2: note has NO_CHANGE', note2?.body.includes('`NO_CHANGE`'));
+check('MR !2: short note: ready to merge, nothing to change', note2?.body.includes('✅ depmap · Ready to merge') && !note2.body.includes('needs a code change') && note2.body.length < 1500, `${note2?.body.length} chars`);
 
 const replay = (asOf) => mrVars(4, asOf, { DEPMAP_START_FLOW: '1' });
 const mr4 = pipeline('MR !4 replay 2025-09-08 13:30', shop, 'deps-sept-8', await replay('2025-09-08T13:30:00Z'));
 const reds = mr4.result?.gate.undecidedReds ?? [];
 check('MR !4 @13:30: gate FAILS on chalk@5.6.1 and debug@4.4.2', mr4.gate === 'fail' && reds.includes('chalk@5.6.1') && reds.includes('debug@4.4.2'), reds.join(', '));
 const [note4] = await report(4);
-check('MR !4 @13:30: note lists red packages with reasons and links', note4?.body.includes('#### Red packages') && /\*\*`chalk@5\.6\.1`\*\*: \*\*needs a decision\*\*/.test(note4.body) && /\]\(https?:\/\//.test(note4.body));
+check('MR !4 @13:30: short note: verdict, a row per red package linking to its fix, one next step', note4?.body.includes('Merge blocked: 2 risky packages') && /\| 🔴 \| \[`chalk@5\.6\.1`\]\(https?:\/\/[^)]*\?pv=chalk%405\.6\.1\)/.test(note4.body) && note4.body.includes('**Next:**') && note4.body.length < 2500, `${note4?.body.length} chars`);
 check('MR !4 @13:30: label depmap::red', (await gl('/projects/1/merge_requests/4')).labels.includes('depmap::red'));
 const [restFlow] = await waitWorkflows(1);
 check('MR !4 @13:30: flow started over REST (goal names pipeline and job) and finished', restFlow?.source === 'rest' && restFlow.status === 'finished' && /Pipeline \d+, job \d+/.test(restFlow.goal), restFlow?.status);
@@ -171,8 +171,8 @@ check('MR !4 @13:30: investigation note posted by ai-depmap-acme', investigation
 const replayVars = await replay('2025-09-08T18:00:00Z');
 const mr4m = pipeline('MR !4 replay 2025-09-08 18:00', shop, 'deps-sept-8', replayVars);
 const notes4m = await report(4);
-const fp = notes4m[0]?.body.match(/Looks like \*\*[^*]+\*\*: \d of \d signals/)?.[0];
-check('MR !4 @18:00: gate still fails; note shows MAL- reasons and the fingerprint', mr4m.gate === 'fail' && /\[malicious\]\(https:\/\/osv\.dev\/vulnerability\/MAL-/.test(notes4m[0]?.body ?? '') && /chalk\/debug[^*]*\*\*: 4 of 4 signals/.test(fp ?? ''), fp);
+const fp = notes4m[0]?.body.match(/Looks like [^|]*\(\d\/\d\)/)?.[0];
+check('MR !4 @18:00: gate still fails; the row names the attack fingerprint', mr4m.gate === 'fail' && /chalk\/debug[^|]*\(4\/4\)/.test(fp ?? ''), fp);
 await waitWorkflows(2);
 check('MR !4 @18:00: the new investigation explains the fingerprint', (await flowNotes()).some((n) => n.body.includes('depmap investigation') && /matches 4 of 4 signals of \*chalk\/debug/.test(n.body)));
 
@@ -185,7 +185,7 @@ check('MR !4: @depmap mention starts the flow, which explains the decision', men
 const mr4b = pipeline('MR !4 replay 2025-09-08 18:00 (after accept)', shop, 'deps-sept-8', replayVars);
 const notes4 = await report(4);
 check('MR !4: re-run applies both decisions and passes the gate', mr4b.gate === 'pass' && /applied \/depmap accept chalk@5\.6\.1/.test(mr4b.out) && /applied \/depmap accept debug@4\.4\.2/.test(mr4b.out));
-check('MR !4: the same note is updated, not duplicated', notes4.length === 1 && notes4[0].id === note4?.id && notes4[0].updated_at !== notes4[0].created_at && notes4[0].body.includes('accepted by @demo'), `${notes4.length} report note(s)`);
+check('MR !4: the same note is updated, not duplicated', notes4.length === 1 && notes4[0].id === note4?.id && notes4[0].updated_at !== notes4[0].created_at && notes4[0].body.includes('Ready to merge · 2 red packages accepted'), `${notes4.length} report note(s)`);
 check('MR !4: label moves to depmap::amber', (await gl('/projects/1/merge_requests/4')).labels.filter((l) => l.startsWith('depmap::')).join() === 'depmap::amber');
 
 const refreshEnv = { ...process.env, DEPMAP_API_URL: API, GITLAB_URL: MOCK, GITLAB_TOKEN: TOKEN };

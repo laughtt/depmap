@@ -7,7 +7,7 @@ import { RISK, ago, esc, glyph, num, shortSha, paths } from "./ui";
 import { crumb, dm, graphFor, stateMsg, topbar } from "./view";
 
 // One public page per push: the inverted dependency tree, what to do before merging, the changes, and the current dependencies.
-export async function commitScreen(root: HTMLElement, repo: string, snapshotId: number | null) {
+export async function commitScreen(root: HTMLElement, repo: string, snapshotId: number | null, focus: string | null = null) {
   dm.ready = false;
   root.innerHTML = `<div class="commit-screen"><header class="commit-head topbar">${topbar("repos", `${crumb(repo, snapshotId ? `<span class="sep">/</span><b>Scan #${snapshotId}</b>` : "")}<div class="ch-title"></div>`)}</header>
     <div class="commit-tree map-host"></div><aside class="commit-side"></aside></div>`;
@@ -80,6 +80,13 @@ export async function commitScreen(root: HTMLElement, repo: string, snapshotId: 
     map.onSelect = (i) => map.select(i);
     const region = [...reds, ...delta.added.map(idx), ...delta.upgraded.map((u) => idx(`${u.name}@${u.to}`))].filter((i) => i > 0);
     if (region.length && G.n > 400) await map.flyTo(region, 0.5, false);
+    // a row in the MR comment links here with ?pv=: bring that package's fix into view, opened
+    const card = focus && root.querySelector<HTMLElement>(`.fx[data-fix="${CSS.escape(focus)}"]`);
+    if (card) {
+      card.closest("li")?.classList.add("focused");
+      card.querySelector("details")?.setAttribute("open", "");
+      card.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
     Object.assign(dm, { map, nodeCount: G.n, cacheHit: G.cacheHit, layoutMs: G.layoutMs, snapshotId: snap.id, ready: true });
   } catch (e) {
     root.innerHTML = `<div class="commit-screen">${stateMsg("This page could not be built", esc((e as Error).message))}</div>`;

@@ -17,7 +17,7 @@ services:
     ports: ["127.0.0.1:8787:8080"]
     depends_on: { db: { condition: service_healthy } }
     restart: unless-stopped
-  # keeps feeding the world map from public repos' lockfiles: scripts/crawl.ts
+  # keeps feeding the world map from public repos' lockfiles; on demand: docker compose --profile crawl up -d crawler
   crawler:
     image: depmap:latest
     command: ["node", "scripts/crawl.ts", "--pause", "15000"]
@@ -28,6 +28,7 @@ services:
     volumes: [cache:/data]
     depends_on: { db: { condition: service_healthy } }
     restart: unless-stopped
+    profiles: [crawl]
 
 volumes:
   db:
