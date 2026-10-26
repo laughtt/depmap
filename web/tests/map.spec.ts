@@ -68,3 +68,16 @@ test("a second page load reuses the cached layout", async ({ page }) => {
   await ready(page);
   expect(await dm<boolean>(page, "dm.cacheHit")).toBe(true);
 });
+
+test("the map opens as an inverted tree and switches to the circle and back", async ({ page }) => {
+  await page.goto(mapUrl(SNAP.red));
+  await ready(page);
+  expect(await dm<boolean>(page, "dm.map.G.tree")).toBe(true);
+  await page.getByRole("button", { name: "Circle" }).click();
+  await page.waitForFunction(() => (window as any).__depmap.map.G.tree === false);
+  expect(await dm<number>(page, "dm.map.color.filter((c) => c === 2).length")).toBeGreaterThan(0);
+  await shot(page, "map-circle");
+  await page.getByRole("button", { name: "Tree" }).click();
+  await page.waitForFunction(() => (window as any).__depmap.map.G.tree === true);
+  await shot(page, "map-tree");
+});

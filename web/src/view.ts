@@ -61,7 +61,9 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
   }
   const events = await api.events(repo).catch(() => []);
   let snap = snaps.find((s) => s.id === snapshotId) ?? snaps[snaps.length - 1];
-  let G = await graphFor(snap.lockfileSha);
+  // the inverted tree (repo on top, dependencies hanging down) is the default; the radial map is one click away
+  let tree = (() => { try { return localStorage.getItem("depmap-layout") !== "radial"; } catch { return true; } })();
+  let G = await graphFor(snap.lockfileSha, tree);
   let state: State | null = null;
   let delta: Delta | null = null;
   let map!: DepMap;
@@ -114,6 +116,8 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     const k = state?.counts ?? snap.counts;
     const order = [2, 1, 0, 3];
     $(".rail").innerHTML = `
+      <section><h4>Layout</h4><div class="seg-tabs layout-toggle" role="group" aria-label="Layout">
+        <button data-layout="tree" aria-pressed="${tree}">Tree</button><button data-layout="radial" aria-pressed="${!tree}">Circle</button></div></section>
       <section><h4>Show</h4>
         ${order.map((c) => `<label class="toggle risk-${RISK[c]}"><input type="checkbox" data-risk="${c}" ${filters.risk[c] ? "checked" : ""}>${glyph(c)}<span>${["Green", "Amber", "Red", "Unknown"][c]}</span><b>${num(k[RISK[c]])}</b></label>`).join("")}
         <label class="toggle"><input type="checkbox" data-f="installOnly" ${filters.installOnly ? "checked" : ""}>${diamond}<span>Install scripts only</span><b>${num(countFlag(F.install))}</b></label>
@@ -126,7 +130,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
       <section class="legend"><h4>Reading the map</h4>
         <ul>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="5" cy="6" r="2" fill="currentColor"/><circle cx="16" cy="6" r="4.5" fill="currentColor"/></svg>Size: how many paths reach it</li>
-          <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="5" fill="none" stroke="currentColor"/><circle cx="12" cy="6" r="9" fill="none" stroke="currentColor" opacity=".5"/></svg>Rings: depth from your app</li>
+          <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="5" fill="none" stroke="currentColor"/><circle cx="12" cy="6" r="9" fill="none" stroke="currentColor" opacity=".5"/></svg>${tree ? "Rows" : "Rings"}: depth from your app</li>${tree ? `<li><svg viewBox="0 0 24 12" width="24" height="12"><path d="M3 2c0 5 18 3 18 9" fill="none" stroke="var(--red)" stroke-width="1.4"/></svg>Red line: how a red package reaches you</li>` : ""}
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="2.5" fill="var(--red)"/><circle cx="12" cy="6" r="5" fill="none" stroke="var(--red)"/></svg>Outlined: red, act now</li>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><path d="M12 1.5 16.5 6 12 10.5 7.5 6z" fill="currentColor"/></svg>Diamond: runs an install script</li>
           <li><svg viewBox="0 0 24 12" width="24" height="12"><circle cx="12" cy="6" r="2.5" fill="currentColor"/><circle cx="12" cy="6" r="5.2" fill="none" stroke="var(--accent)"/></svg>Halo: added in this change</li>
@@ -143,6 +147,21 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     for (const d of G.depth) if (d !== 255) dc[d]++;
     return dc;
   };
+
+  root.querySelector(".rail")!.addEventListener("click", async (e) => {
+    const want = (e.target as HTMLElement).closest<HTMLElement>("[data-layout]")?.dataset.layout;
+    if (!want || (want === "tree") === tree) return;
+    tree = want === "tree";
+    try { localStorage.setItem("depmap-layout", want); } catch {}
+    const selName = drawer.isOpen ? G.names[drawer.node] : null;
+    G = await graphFor(snap.lockfileSha, tree);
+    mountMap();
+    if (state) map.setState(state.color, state.flags);
+    map.setFilters(filters);
+    rail();
+    if (scrub.compare) await loadDelta(snaps.findIndex((s) => s.id === snap.id) > 0);
+    if (selName) select(G.byName.get(selName) ?? null);
+  });
 
   root.querySelector(".rail")!.addEventListener("input", (e) => {
     const t = e.target as HTMLInputElement;
@@ -208,7 +227,7 @@ export async function mapScreen(root: HTMLElement, repo: string, snapshotId: num
     const selName = drawer.isOpen ? G.names[drawer.node] : null;
     if (remount) {
       const wasMax = filters.depth[1] >= G.maxDepth;
-      G = await graphFor(next.lockfileSha);
+      G = await graphFor(next.lockfileSha, tree);
       if (wasMax) filters.depth[1] = G.maxDepth;
       dc = null;
       mountMap();

@@ -602,3 +602,6 @@ kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; 
   .commit-side { border-left: 0; border-top: 1px solid var(--line); }
   .ch-title .muted, .btn-link { display: none; }
 }
+.layout-toggle { display: flex; margin-bottom: 0; }
+.layout-toggle button { flex: 1; }
+.layout-toggle button[aria-pressed="true"] { background: var(--hover); color: var(--text); }
