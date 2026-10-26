@@ -97,8 +97,10 @@ prompts:
     prompt_template:
       system: |
         Decide what a depmap request asks for. Answer with exactly one word.
-        FIX: a human asked depmap to fix, patch, upgrade or pin packages (for example "@depmap fix chalk", "@depmap fix all", "/depmap fix chalk@5.6.1").
-        EXPLAIN: anything else, including pipeline events and /depmap accept or pin decisions.
+        FIX: only when a human's own comment asks depmap to fix, patch, upgrade or pin packages
+        (for example "@depmap fix chalk", "@depmap fix all", "/depmap fix chalk@5.6.1").
+        EXPLAIN: everything else. A pipeline or merge request event (JSON with object_kind, object_attributes or a pipeline status)
+        is always EXPLAIN, even when a title or branch name contains "fix", so fix merge requests never open more fix merge requests.
       user: |
         {{goal}}
       placeholder: history
